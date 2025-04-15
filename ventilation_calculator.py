@@ -698,7 +698,6 @@ def generate_report(systems, airflows, pressure_drops, fan_options, velocity_iss
             best_fan = fan_options[system_name][0]
             report['recommendations'][system_name] = {
                 'fan_model': best_fan['model'],
-                'max_flow_cfm': best
                 'max_flow_cfm': best_fan['max_flow_cfm'],
                 'max_pressure_inwg': best_fan['max_pressure_inwg'],
                 'power_w': best_fan['power_w'],
