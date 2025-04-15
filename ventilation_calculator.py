@@ -238,25 +238,25 @@ def define_bathroom_systems():
             'rooms': [
                 {
                     'name': 'Piso 1 Baño C',
-                    'volume': 25,  # Estimated volume
+                    'volume': 10,  # Estimated volume
                     'grilles': 3,
                     'grille_size': (inch_to_m(6), inch_to_m(14))
                 },
                 {
                     'name': 'Piso 1 Baño D',
-                    'volume': 25,  # Estimated volume
+                    'volume': 10,  # Estimated volume
                     'grilles': 3,
                     'grille_size': (inch_to_m(6), inch_to_m(14))
                 },
                 {
                     'name': 'Piso 2 Baño C',
-                    'volume': 20,  # Estimated volume
+                    'volume': 10,  # Estimated volume
                     'grilles': 3,
                     'grille_size': (inch_to_m(4), inch_to_m(11))
                 },
                 {
                     'name': 'Piso 2 Baño D',
-                    'volume': 20,  # Estimated volume
+                    'volume': 10,  # Estimated volume
                     'grilles': 3,
                     'grille_size': (inch_to_m(4), inch_to_m(11))
                 }
