@@ -17,7 +17,7 @@ To run the analysis locally, follow these steps:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/ventilation-analysis.git
+   git clone https://github.com/hiesus/ventilation-analysis.git
    cd ventilation-analysis
    ```
 
