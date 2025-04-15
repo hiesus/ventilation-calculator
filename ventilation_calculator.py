@@ -287,9 +287,7 @@ def analyze_ventilation_system(climate_condition='extreme_hot_humid'):
         else:
             area = duct_area(duct['width'], duct['height'])
             hyd_diam = hydraulic_diameter(duct['width'], duct['height'])
-        
-        velocity = air_velocity(flow_rate_m3
-velocity = air_velocity(flow_rate_m3s, area)
+            velocity = air_velocity(flow_rate_m3s, area)
         duct_velocities.append(velocity)
         
         loss = pressure_loss(velocity, duct['length'], hyd_diam, duct['k_factors'], density)
