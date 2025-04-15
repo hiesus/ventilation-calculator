@@ -287,7 +287,8 @@ def analyze_ventilation_system(climate_condition='extreme_hot_humid'):
         else:
             area = duct_area(duct['width'], duct['height'])
             hyd_diam = hydraulic_diameter(duct['width'], duct['height'])
-            velocity = air_velocity(flow_rate_m3s, area)
+        
+        velocity = air_velocity(flow_rate_m3s, area)
         duct_velocities.append(velocity)
         
         loss = pressure_loss(velocity, duct['length'], hyd_diam, duct['k_factors'], density)
@@ -296,6 +297,7 @@ def analyze_ventilation_system(climate_condition='extreme_hot_humid'):
     # Store results for main duct
     results['Ducto_Principal_Piso2'] = {
         'flow_rate_m3s': flow_rate_m3s,
+        'flow_rate_m3h': flow_rate_m3s * 3600,  # Make sure to include this key
         'flow_rate_cfm': flow_rate_m3s * M3S_TO_CFM,
         'duct_velocities_m_s': duct_velocities,
         'pressure_losses_pa': pressure_losses,
@@ -406,19 +408,24 @@ def generate_report(results, fan_requirements, suggestions, fan_recommendations,
     
     for bathroom_name, data in results.items():
         print(f"\n{bathroom_name}:")
-        if bathroom_name != 'Ducto_Principal_Piso2':
+        if bathroom_name != 'Ducto_Principal_Piso2' and 'volume_m3' in data:
             print(f"  Volume: {data['volume_m3']:.1f} m³")
-            print(f"  Air changes per hour: {data['air_changes_per_hour']:.1f}")
-        print(f"  Flow rate: {data['flow_rate_m3h']:.1f} m³/h ({data['flow_rate_cfm']:.1f} CFM)")
+            if 'air_changes_per_hour' in data:
+                print(f"  Air changes per hour: {data['air_changes_per_hour']:.1f}")
         
-        if bathroom_name != 'Ducto_Principal_Piso2':
+        if 'flow_rate_m3h' in data and 'flow_rate_cfm' in data:
+            print(f"  Flow rate: {data['flow_rate_m3h']:.1f} m³/h ({data['flow_rate_cfm']:.1f} CFM)")
+        
+        if bathroom_name != 'Ducto_Principal_Piso2' and 'grille_velocity_m_s' in data:
             print(f"  Grille velocity: {data['grille_velocity_m_s']:.2f} m/s")
         
-        print(f"  Duct velocities:")
-        for i, velocity in enumerate(data['duct_velocities_m_s']):
-            print(f"    Duct {i+1}: {velocity:.2f} m/s")
+        if 'duct_velocities_m_s' in data:
+            print(f"  Duct velocities:")
+            for i, velocity in enumerate(data['duct_velocities_m_s']):
+                print(f"    Duct {i+1}: {velocity:.2f} m/s")
         
-        print(f"  Total pressure loss: {data['total_pressure_loss_pa']:.1f} Pa ({data['total_pressure_loss_pa'] * PA_TO_INWG:.4f} inWG)")
+        if 'total_pressure_loss_pa' in data:
+            print(f"  Total pressure loss: {data['total_pressure_loss_pa']:.1f} Pa ({data['total_pressure_loss_pa'] * PA_TO_INWG:.4f} inWG)")
     
     print("\n--- SYSTEM REQUIREMENTS ---")
     for system, requirements in fan_requirements.items():
