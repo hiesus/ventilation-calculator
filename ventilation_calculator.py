@@ -1,537 +1,394 @@
 import math
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.optimize import fsolve
 
 # Constants
 AIR_CHANGES_PER_HOUR = 12
-AIR_DENSITY_SEA_LEVEL = 1.225  # kg/m³
 ALTITUDE = 850  # meters above sea level
-GRAVITY = 9.81  # m/s²
-PRESSURE_ATM = 101325  # Pa at sea level
-TEMPERATURE_AVG = 25  # °C
-HUMIDITY_AVG = 60  # %
-R_GAS_CONSTANT = 287.05  # J/(kg·K)
+STANDARD_TEMP = 25  # °C
+STANDARD_RH = 0.60  # 60% relative humidity
 
-# Function to convert units
-def convert_to_meters(value, unit):
-    if unit == "inch":
-        return value * 0.0254
-    elif unit == "m":
-        return value
-    else:
-        return value
+# Air density correction for altitude
+def calculate_air_density(altitude, temp, rh):
+    # Standard air density at sea level (kg/m³)
+    rho_0 = 1.225
+    
+    # Altitude correction (simplified)
+    pressure_ratio = (1 - 2.25577e-5 * altitude) ** 5.25588
+    temp_ratio = (273.15 + temp) / 288.15
+    
+    # Basic density calculation
+    rho = rho_0 * pressure_ratio / temp_ratio
+    
+    # Humidity effect (simplified)
+    humidity_factor = 1 - 0.378 * rh * 0.0315  # approximation of humidity effect
+    
+    return rho * humidity_factor
 
-# Function to calculate air density based on altitude, temperature and humidity
-def calculate_air_density(altitude, temperature, humidity):
-    # Barometric pressure at altitude
-    pressure = PRESSURE_ATM * (1 - 2.25577e-5 * altitude) ** 5.25588
-    
-    # Temperature in Kelvin
-    temp_kelvin = temperature + 273.15
-    
-    # Saturation vapor pressure
-    es = 6.11 * 10 ** (7.5 * temperature / (237.7 + temperature))
-    
-    # Vapor pressure
-    e = humidity * es / 100
-    
-    # Mixing ratio
-    r = 0.622 * e / (pressure - e)
-    
-    # Virtual temperature
-    tv = temp_kelvin * (1 + 0.61 * r)
-    
-    # Density calculation
-    density = pressure / (R_GAS_CONSTANT * tv)
-    
-    return density
+# Function to convert dimensions from inches to meters
+def inch_to_meter(inches):
+    return inches * 0.0254
 
-# Calculate actual air density
-air_density = calculate_air_density(ALTITUDE, TEMPERATURE_AVG, HUMIDITY_AVG)
-
-# Function to calculate required air flow rate based on room volume and air changes per hour
-def calculate_required_flow_rate(volume_m3):
-    # Convert m³ to cfm (cubic feet per minute)
-    flow_rate_m3_per_hour = volume_m3 * AIR_CHANGES_PER_HOUR
-    flow_rate_m3_per_second = flow_rate_m3_per_hour / 3600
-    flow_rate_cfm = flow_rate_m3_per_second * 2118.88
-    return flow_rate_m3_per_second, flow_rate_cfm
-
-# Function to calculate duct cross-sectional area
-def calculate_duct_area(width_inches, height_inches):
-    width_m = width_inches * 0.0254
-    height_m = height_inches * 0.0254
+# Function to calculate area in square meters
+def calculate_area(width_inch, height_inch):
+    width_m = inch_to_meter(width_inch)
+    height_m = inch_to_meter(height_inch)
     return width_m * height_m
 
-# Function to calculate circular duct area
-def calculate_circular_duct_area(diameter_inches):
-    diameter_m = diameter_inches * 0.0254
-    return math.pi * (diameter_m / 2) ** 2
+# Function to calculate equivalent diameter for rectangular ducts
+def equivalent_diameter(width_inch, height_inch):
+    width_m = inch_to_meter(width_inch)
+    height_m = inch_to_meter(height_inch)
+    return 1.3 * ((width_m * height_m) ** 0.625) / ((width_m + height_m) ** 0.25)
 
-# Function to calculate hydraulic diameter
-def calculate_hydraulic_diameter(width_inches, height_inches):
-    width_m = width_inches * 0.0254
-    height_m = height_inches * 0.0254
-    return 2 * (width_m * height_m) / (width_m + height_m)
+# Function to calculate required airflow based on room volume and air changes
+def calculate_airflow(volume_m3, air_changes_per_hour):
+    # Convert to m³/h
+    airflow_m3h = volume_m3 * air_changes_per_hour
+    # Convert to CFM (Cubic Feet per Minute)
+    airflow_cfm = airflow_m3h * 0.589
+    return airflow_m3h, airflow_cfm
 
-# Function to calculate velocity in duct
-def calculate_velocity(flow_rate_m3_per_second, area_m2):
-    return flow_rate_m3_per_second / area_m2
+# Function to calculate velocity in a duct
+def calculate_velocity(airflow_m3h, area_m2):
+    # Convert m³/h to m³/s
+    airflow_m3s = airflow_m3h / 3600
+    return airflow_m3s / area_m2
 
-# Function to calculate friction factor using Colebrook equation
-def calculate_friction_factor(reynolds_number, roughness_m, diameter_m):
-    def colebrook_equation(f):
-        return 1 / math.sqrt(f) + 2 * math.log10(roughness_m / (3.7 * diameter_m) + 2.51 / (reynolds_number * math.sqrt(f)))
-    
-    # Initial guess for friction factor
-    initial_guess = 0.02
-    
-    # Solve the Colebrook equation
-    friction_factor = fsolve(colebrook_equation, initial_guess)[0]
-    
-    return friction_factor
+# Function to calculate friction loss in straight ducts
+def calculate_friction_loss(velocity, equiv_diameter, length, friction_factor=0.02):
+    # Darcy-Weisbach equation for pressure loss
+    return friction_factor * (length / equiv_diameter) * (velocity ** 2) / 2
 
-# Function to calculate pressure loss in duct
-def calculate_pressure_loss_duct(length_m, hydraulic_diameter_m, velocity_m_s, friction_factor):
-    return friction_factor * (length_m / hydraulic_diameter_m) * (air_density * velocity_m_s ** 2 / 2)
+# Function to calculate pressure loss due to fittings
+def calculate_fitting_loss(velocity, k_factor):
+    # Dynamic pressure loss equation
+    return k_factor * (velocity ** 2) / 2
 
-# Function to calculate pressure loss in fittings
-def calculate_pressure_loss_fitting(k_factor, velocity_m_s):
-    return k_factor * (air_density * velocity_m_s ** 2 / 2)
+# Function to calculate total pressure loss
+def calculate_total_pressure_loss(straight_losses, fitting_losses):
+    return sum(straight_losses) + sum(fitting_losses)
 
-# Define K factors for common fittings
-k_factors = {
-    'elbow_90_rect': 0.3,  # 90° rectangular elbow
-    'elbow_90_round': 0.25,  # 90° round elbow
-    'tee_straight': 0.5,  # Straight-through tee
-    'tee_branch': 1.0,  # Branch of tee
-    'entry_sharp': 0.5,  # Sharp entry from room to duct
-    'exit_duct': 1.0,  # Exit from duct to atmosphere
-    'expansion_sudden': 0.7,  # Sudden expansion
-    'contraction_sudden': 0.4,  # Sudden contraction
-    'rect_to_round': 0.2,  # Rectangular to round transition
+# K-factors for common fittings
+def get_k_factor(fitting_type):
+    k_factors = {
+        'elbow_90': 0.3,       # 90° elbow
+        'tee': 1.0,            # T-connection
+        'entry': 0.5,          # Entry from room to duct
+        'exit': 1.0,           # Exit from duct
+        'sudden_expansion': 0.8,  # Sudden expansion
+        'transition': 0.2      # Section change
+    }
+    return k_factors.get(fitting_type, 0.5)  # Default if not found
+
+# Define bathroom spaces
+bathrooms = {
+    'PB_Bano_C': {'volume': 25, 'grilles': 2, 'grille_size': (4, 11)},
+    'PB_Bano_D': {'volume': 18, 'grilles': 3, 'grille_size': (6, 11)},
+    'Cafeteria_Bano_C': {'volume': 6.5, 'grilles': 1, 'grille_size': (7.5, 10)},
+    'Cafeteria_Bano_D': {'volume': 9, 'grilles': 2, 'grille_size': (7.5, 11)},
+    'Piso1_Bano_C': {'volume': 25, 'grilles': 3, 'grille_size': (6, 14)},
+    'Piso1_Bano_D': {'volume': 25, 'grilles': 3, 'grille_size': (6, 14)},
+    'Piso2_Bano_C': {'volume': 20, 'grilles': 3, 'grille_size': (4, 11)},
+    'Piso2_Bano_D': {'volume': 20, 'grilles': 3, 'grille_size': (4, 11)}
 }
 
-# Function to calculate total system pressure loss
-def calculate_total_pressure_loss(system_components):
-    total_loss = 0
-    for component in system_components:
-        total_loss += component['pressure_loss']
-    return total_loss
+# Calculate airflow requirements for each bathroom
+for name, bathroom in bathrooms.items():
+    airflow_m3h, airflow_cfm = calculate_airflow(bathroom['volume'], AIR_CHANGES_PER_HOUR)
+    bathroom['airflow_m3h'] = airflow_m3h
+    bathroom['airflow_cfm'] = airflow_cfm
+    print(f"{name}: Volume {bathroom['volume']} m³, Required airflow: {airflow_m3h:.2f} m³/h ({airflow_cfm:.2f} CFM)")
 
-# Define the systems
-def define_system_1():
-    # System 1: Ground floor and cafeteria bathrooms
-    
-    # Room volumes
-    pb_bano_c_volume = 25  # m³
-    pb_bano_d_volume = 18  # m³
-    cafeteria_bano_c_volume = 6.5  # m³
-    cafeteria_bano_d_volume = 9  # m³
-    
-    total_volume = pb_bano_c_volume + pb_bano_d_volume + cafeteria_bano_c_volume + cafeteria_bano_d_volume
-    
-    # Calculate required total flow rate
-    flow_rate_m3_s, flow_rate_cfm = calculate_required_flow_rate(total_volume)
-    
-    # Define ducts and components
-    components = []
-    
-    # PB Baño C - 2 grilles 4"x11"
-    grille_area = 2 * calculate_duct_area(4, 11)
-    velocity_grille = calculate_velocity(flow_rate_m3_s * (pb_bano_c_volume / total_volume), grille_area)
-    components.append({
-        'name': 'PB Baño C Grilles',
-        'velocity': velocity_grille,
-        'area': grille_area,
-        'pressure_loss': calculate_pressure_loss_fitting(k_factors['entry_sharp'], velocity_grille)
-    })
-    
-    # PB Baño C - Duct 6"x11" 4m
-    duct_area = calculate_duct_area(6, 11)
-    velocity_duct = calculate_velocity(flow_rate_m3_s * ((pb_bano_c_volume + pb_bano_d_volume) / total_volume), duct_area)
-    hydraulic_diameter = calculate_hydraulic_diameter(6, 11)
-    reynolds_number = (velocity_duct * hydraulic_diameter * air_density) / (1.825e-5)  # Assuming kinematic viscosity
-    friction_factor = calculate_friction_factor(reynolds_number, 0.00015, hydraulic_diameter)
-    components.append({
-        'name': 'PB Baño C Duct 6"x11"',
-        'velocity': velocity_duct,
-        'area': duct_area,
-        'pressure_loss': calculate_pressure_loss_duct(4, hydraulic_diameter, velocity_duct, friction_factor)
-    })
-    
-    # Expansion from 6"x11" to 11"x11"
-    expanded_area = calculate_duct_area(11, 11)
-    velocity_expanded = calculate_velocity(flow_rate_m3_s * ((pb_bano_c_volume + pb_bano_d_volume) / total_volume), expanded_area)
-    components.append({
-        'name': 'Expansion 6"x11" to 11"x11"',
-        'velocity': velocity_expanded,
-        'area': expanded_area,
-        'pressure_loss': calculate_pressure_loss_fitting(k_factors['expansion_sudden'], velocity_duct)
-    })
-    
-    # 11"x11" duct 2m with 90 degree elbow
-    velocity_11x11 = velocity_expanded
-    hydraulic_diameter_11x11 = calculate_hydraulic_diameter(11, 11)
-    reynolds_number_11x11 = (velocity_11x11 * hydraulic_diameter_11x11 * air_density) / (1.825e-5)
-    friction_factor_11x11 = calculate_friction_factor(reynolds_number_11x11, 0.00015, hydraulic_diameter_11x11)
-    components.append({
-        'name': '11"x11" duct 2m',
-        'velocity': velocity_11x11,
-        'area': expanded_area,
-        'pressure_loss': calculate_pressure_loss_duct(2, hydraulic_diameter_11x11, velocity_11x11, friction_factor_11x11)
-    })
-    
-    # 90 degree elbow 11"x11"
-    components.append({
-        'name': '90° Elbow 11"x11"',
-        'velocity': velocity_11x11,
-        'area': expanded_area,
-        'pressure_loss': calculate_pressure_loss_fitting(k_factors['elbow_90_rect'], velocity_11x11)
-    })
-    
-    # Section change 11"x11" to circular 12.5"
-    circular_area = calculate_circular_duct_area(12.5)
-    velocity_circular = calculate_velocity(flow_rate_m3_s, circular_area)
-    components.append({
-        'name': 'Section change 11"x11" to 12.5" round',
-        'velocity': velocity_circular,
-        'area': circular_area,
-        'pressure_loss': calculate_pressure_loss_fitting(k_factors['rect_to_round'], velocity_11x11)
-    })
-    
-    # Vertical circular duct 12.5" 6m
-    diameter_circular = 12.5 * 0.0254
-    reynolds_number_circular = (velocity_circular * diameter_circular * air_density) / (1.825e-5)
-    friction_factor_circular = calculate_friction_factor(reynolds_number_circular, 0.00015, diameter_circular)
-    components.append({
-        'name': 'Vertical circular duct 12.5" 6m',
-        'velocity': velocity_circular,
-        'area': circular_area,
-        'pressure_loss': calculate_pressure_loss_duct(6, diameter_circular, velocity_circular, friction_factor_circular)
-    })
-    
-    # 90 degree elbow circular 12.5"
-    components.append({
-        'name': '90° Elbow 12.5" circular',
-        'velocity': velocity_circular,
-        'area': circular_area,
-        'pressure_loss': calculate_pressure_loss_fitting(k_factors['elbow_90_round'], velocity_circular)
-    })
-    
-    # Calculate additional components for PB Baño D, Cafetín Baño C, Cafetín Baño D
-    # ... (similar calculations would continue for all other components)
-    
-    # Calculate total pressure loss
-    total_loss = calculate_total_pressure_loss(components)
-    
-    return {
-        'name': 'System 1: Ground Floor and Cafeteria',
-        'flow_rate_m3_s': flow_rate_m3_s,
-        'flow_rate_cfm': flow_rate_cfm,
-        'pressure_loss_pa': total_loss,
-        'pressure_loss_inwg': total_loss / 249.08,  # Convert Pa to inwg
-        'components': components
-    }
+# Calculate total airflow requirements for each fan
+fan1_bathrooms = ['PB_Bano_C', 'PB_Bano_D', 'Cafeteria_Bano_C', 'Cafeteria_Bano_D']
+fan2_bathrooms = ['Piso1_Bano_C', 'Piso1_Bano_D', 'Piso2_Bano_C', 'Piso2_Bano_D']
 
-def define_system_2():
-    # System 2: First and second floor bathrooms
-    
-    # Room volumes (estimate based on number of grilles)
-    piso1_bano_c_volume = 25  # m³ (estimated)
-    piso1_bano_d_volume = 25  # m³ (estimated)
-    piso2_bano_c_volume = 20  # m³ (estimated)
-    piso2_bano_d_volume = 20  # m³ (estimated)
-    
-    total_volume = piso1_bano_c_volume + piso1_bano_d_volume + piso2_bano_c_volume + piso2_bano_d_volume
-    
-    # Calculate required total flow rate
-    flow_rate_m3_s, flow_rate_cfm = calculate_required_flow_rate(total_volume)
-    
-    # Similar component calculations would continue for System 2
-    # ...
-    
-    # For simplicity, let's estimate the total pressure loss for System 2
-    estimated_pressure_loss = 150  # Pa (estimation)
-    
-    return {
-        'name': 'System 2: First and Second Floors',
-        'flow_rate_m3_s': flow_rate_m3_s,
-        'flow_rate_cfm': flow_rate_cfm,
-        'pressure_loss_pa': estimated_pressure_loss,
-        'pressure_loss_inwg': estimated_pressure_loss / 249.08,  # Convert Pa to inwg
-        'components': []
-    }
+fan1_total_m3h = sum(bathrooms[name]['airflow_m3h'] for name in fan1_bathrooms)
+fan1_total_cfm = sum(bathrooms[name]['airflow_cfm'] for name in fan1_bathrooms)
 
-# Main function to calculate and recommend fans
-def main():
-    # Calculate system parameters
-    system1 = define_system_1()
-    system2 = define_system_2()
+fan2_total_m3h = sum(bathrooms[name]['airflow_m3h'] for name in fan2_bathrooms)
+fan2_total_cfm = sum(bathrooms[name]['airflow_cfm'] for name in fan2_bathrooms)
+
+print(f"\nFan 1 (Ground Floor & Cafeteria): Total airflow: {fan1_total_m3h:.2f} m³/h ({fan1_total_cfm:.2f} CFM)")
+print(f"Fan 2 (Floors 1 & 2): Total airflow: {fan2_total_m3h:.2f} m³/h ({fan2_total_cfm:.2f} CFM)")
+
+# Define duct systems for pressure loss calculation
+# This is a simplified calculation for the critical path of each fan system
+
+# Fan 1 System - Ground Floor and Cafeteria
+# Critical path through PB_Bano_C to fan
+fan1_critical_path = [
+    # Format: [duct_width_inch, duct_height_inch, length_m, duct_type]
+    {'section': 'PB_Bano_C Grille', 'dim': (4, 11), 'length': 0, 'type': 'entry'},
+    {'section': 'Duct 6x11', 'dim': (6, 11), 'length': 4, 'type': 'straight'},
+    {'section': 'Expansion to 11x11', 'dim': (11, 11), 'length': 0, 'type': 'sudden_expansion'},
+    {'section': 'Duct 11x11', 'dim': (11, 11), 'length': 2, 'type': 'straight'},
+    {'section': '90° Elbow 11x11', 'dim': (11, 11), 'length': 0, 'type': 'elbow_90'},
+    {'section': 'Transition to 12.5" circular', 'dim': (12.5, 12.5), 'length': 0, 'type': 'transition'},
+    {'section': '12.5" Vertical Duct', 'dim': (12.5, 12.5), 'length': 6, 'type': 'straight'},
+    {'section': '90° Elbow to Fan', 'dim': (12.5, 12.5), 'length': 0, 'type': 'elbow_90'},
+    {'section': 'Fan Connection', 'dim': (12.5, 12.5), 'length': 0, 'type': 'exit'}
+]
+
+# Fan 2 System - Floors 1 & 2
+# Critical path through Piso2 to fan
+fan2_critical_path = [
+    # Format: [duct_width_inch, duct_height_inch, length_m, duct_type]
+    {'section': 'Piso2_Bano_C Grille', 'dim': (4, 11), 'length': 0, 'type': 'entry'},
+    {'section': 'Duct 11x6', 'dim': (11, 6), 'length': 3.2, 'type': 'straight'},
+    {'section': 'T-Connection', 'dim': (11, 6), 'length': 0, 'type': 'tee'},
+    {'section': 'Main Duct 11x11', 'dim': (11, 11), 'length': 12, 'type': 'straight'},
+    {'section': 'Transition to 12" circular', 'dim': (12, 12), 'length': 0, 'type': 'transition'},
+    {'section': 'Fan Connection', 'dim': (12, 12), 'length': 0, 'type': 'exit'}
+]
+
+# Calculate pressure losses for Fan 1
+def calculate_path_pressure_loss(path, total_airflow_m3h):
+    straight_losses = []
+    fitting_losses = []
     
-    # Check for minimum velocities in ducts (should be > 3 m/s typically)
-    min_velocity_system1 = min([comp['velocity'] for comp in system1['components'] if 'velocity' in comp])
+    air_density = calculate_air_density(ALTITUDE, STANDARD_TEMP, STANDARD_RH)
     
-    # Display results
-    print("=== Ventilation System Calculations ===")
-    print("\nAir Density at {:.0f}m altitude, {:.1f}°C, {:.0f}% humidity: {:.3f} kg/m³".format(
-        ALTITUDE, TEMPERATURE_AVG, HUMIDITY_AVG, air_density))
-    # Fan selection criteria
-    print("\n=== Fan Selection Criteria ===")
-    print("System 1: Ground Floor and Cafeteria")
-    print("  Required Flow Rate: {:.1f} m³/s = {:.0f} CFM".format(
-        system1['flow_rate_m3_s'], system1['flow_rate_cfm']))
-    print("  Required Static Pressure: {:.1f} Pa = {:.2f} inwg".format(
-        system1['pressure_loss_pa'], system1['pressure_loss_inwg']))
+    print("\nSection-by-section pressure loss calculation:")
+    print("-" * 70)
+    print(f"{'Section':<25} {'Velocity (m/s)':<15} {'Pressure Loss (Pa)':<20}")
+    print("-" * 70)
     
-    # Add 25% safety factor
-    system1_flow_with_safety = system1['flow_rate_cfm'] * 1.25
-    system1_pressure_with_safety = system1['pressure_loss_inwg'] * 1.25
-    
-    print("  Flow Rate with 25% Safety Factor: {:.0f} CFM".format(system1_flow_with_safety))
-    print("  Static Pressure with 25% Safety Factor: {:.2f} inwg".format(system1_pressure_with_safety))
-    
-    if min_velocity_system1 < 3:
-        print("  WARNING: Some duct velocities are below 3 m/s, which may lead to poor ventilation.")
-    
-    print("\nSystem 2: First and Second Floors")
-    print("  Required Flow Rate: {:.1f} m³/s = {:.0f} CFM".format(
-        system2['flow_rate_m3_s'], system2['flow_rate_cfm']))
-    print("  Required Static Pressure: {:.1f} Pa = {:.2f} inwg".format(
-        system2['pressure_loss_pa'], system2['pressure_loss_inwg']))
-    
-    # Add 25% safety factor
-    system2_flow_with_safety = system2['flow_rate_cfm'] * 1.25
-    system2_pressure_with_safety = system2['pressure_loss_inwg'] * 1.25
-    
-    print("  Flow Rate with 25% Safety Factor: {:.0f} CFM".format(system2_flow_with_safety))
-    print("  Static Pressure with 25% Safety Factor: {:.2f} inwg".format(system2_pressure_with_safety))
-    
-    # Commercial Fan Recommendations
-    # These are example fans - in a real system you would look up actual manufacturer data
-    print("\n=== Commercial Fan Recommendations ===")
-    
-    # Define some sample commercial fans
-    commercial_fans = [
-        {
-            'model': 'Cook 100 CPS',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 1000,
-            'max_pressure_inwg': 0.75,
-            'power_hp': 0.25,
-            'power_watts': 186,
-            'rpm': 1725
-        },
-        {
-            'model': 'Cook 120 CPS',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 1200,
-            'max_pressure_inwg': 1.0,
-            'power_hp': 0.33,
-            'power_watts': 246,
-            'rpm': 1725
-        },
-        {
-            'model': 'Greenheck CUE-070-VG',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 700,
-            'max_pressure_inwg': 0.5,
-            'power_hp': 0.125,
-            'power_watts': 93,
-            'rpm': 1625
-        },
-        {
-            'model': 'Greenheck CUE-095-VG',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 950,
-            'max_pressure_inwg': 0.75,
-            'power_hp': 0.25,
-            'power_watts': 186,
-            'rpm': 1750
-        },
-        {
-            'model': 'Greenheck CUE-120-VG',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 1200,
-            'max_pressure_inwg': 1.0,
-            'power_hp': 0.33,
-            'power_watts': 246,
-            'rpm': 1750
-        },
-        {
-            'model': 'Greenheck CUE-140-VG',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 1400,
-            'max_pressure_inwg': 1.25,
-            'power_hp': 0.5,
-            'power_watts': 373,
-            'rpm': 1750
-        },
-        {
-            'model': 'Soler & Palau TD-200',
-            'type': 'Mixed Flow',
-            'max_flow_cfm': 720,
-            'max_pressure_inwg': 0.6,
-            'power_hp': 0.2,
-            'power_watts': 149,
-            'rpm': 2500
-        },
-        {
-            'model': 'Soler & Palau TD-250',
-            'type': 'Mixed Flow',
-            'max_flow_cfm': 950,
-            'max_pressure_inwg': 0.8,
-            'power_hp': 0.25,
-            'power_watts': 186,
-            'rpm': 2500
-        },
-        {
-            'model': 'Soler & Palau TD-315',
-            'type': 'Mixed Flow',
-            'max_flow_cfm': 1200,
-            'max_pressure_inwg': 1.1,
-            'power_hp': 0.33,
-            'power_watts': 246,
-            'rpm': 2500
-        },
-        {
-            'model': 'Fantech FKD 12XL',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 980,
-            'max_pressure_inwg': 0.8,
-            'power_hp': 0.33,
-            'power_watts': 246,
-            'rpm': 1800
-        },
-        {
-            'model': 'Fantech FKD 14',
-            'type': 'Centrifugal',
-            'max_flow_cfm': 1200,
-            'max_pressure_inwg': 1.0,
-            'power_hp': 0.5,
-            'power_watts': 373,
-            'rpm': 1800
-        }
-    ]
-    
-    # Function to recommend fans
-    def recommend_fans(required_flow, required_pressure, fans_list):
-        suitable_fans = []
-        for fan in fans_list:
-            if fan['max_flow_cfm'] >= required_flow and fan['max_pressure_inwg'] >= required_pressure:
-                # Calculate simple matching score - lower is better
-                # This gives preference to fans that are closer to the required specs
-                flow_ratio = fan['max_flow_cfm'] / required_flow
-                pressure_ratio = fan['max_pressure_inwg'] / required_pressure
-                matching_score = abs(flow_ratio - 1) + abs(pressure_ratio - 1)
-                
-                suitable_fans.append({
-                    'model': fan['model'],
-                    'type': fan['type'],
-                    'max_flow_cfm': fan['max_flow_cfm'],
-                    'max_pressure_inwg': fan['max_pressure_inwg'],
-                    'power_hp': fan['power_hp'],
-                    'power_watts': fan['power_watts'],
-                    'rpm': fan['rpm'],
-                    'matching_score': matching_score
-                })
+    for section in path:
+        # For circular ducts, both dimensions are the same (diameter)
+        if section['dim'][0] == section['dim'][1]:  # Circular duct
+            area = math.pi * (inch_to_meter(section['dim'][0])/2)**2
+            equiv_diam = inch_to_meter(section['dim'][0])
+        else:  # Rectangular duct
+            area = calculate_area(section['dim'][0], section['dim'][1])
+            equiv_diam = equivalent_diameter(section['dim'][0], section['dim'][1])
         
-        # Sort by matching score
-        return sorted(suitable_fans, key=lambda x: x['matching_score'])
+        velocity = calculate_velocity(total_airflow_m3h, area)
+        
+        if section['type'] == 'straight':
+            loss = calculate_friction_loss(velocity, equiv_diam, section['length'])
+            straight_losses.append(loss)
+            loss_type = "Friction"
+        else:
+            k = get_k_factor(section['type'])
+            loss = calculate_fitting_loss(velocity, k)
+            fitting_losses.append(loss)
+            loss_type = f"Fitting (k={k})"
+        
+        print(f"{section['section']:<25} {velocity:.2f} m/s      {loss:.2f} Pa ({loss_type})")
     
-    # Recommend fans for System 1
-    recommended_fans_system1 = recommend_fans(
-        system1_flow_with_safety, 
-        system1_pressure_with_safety, 
-        commercial_fans
-    )
+    # Convert losses to Pascals and apply air density correction
+    total_loss_pa = (sum(straight_losses) + sum(fitting_losses)) * air_density
+    total_loss_inwg = total_loss_pa * 0.00402  # Convert Pa to inches of water gauge
     
-    print("\nRecommended fans for System 1 (Ground Floor and Cafeteria):")
-    if recommended_fans_system1:
-        for i, fan in enumerate(recommended_fans_system1[:3]):  # Top 3 recommendations
-            print("{}. {} ({})".format(i+1, fan['model'], fan['type']))
-            print("   Max Flow: {:.0f} CFM, Max Pressure: {:.2f} inwg".format(
-                fan['max_flow_cfm'], fan['max_pressure_inwg']))
-            print("   Power: {:.2f} HP ({:.0f} W), RPM: {:.0f}".format(
-                fan['power_hp'], fan['power_watts'], fan['rpm']))
+    print("-" * 70)
+    print(f"Total pressure loss: {total_loss_pa:.2f} Pa ({total_loss_inwg:.4f} inWG)")
+    
+    return total_loss_pa, total_loss_inwg, straight_losses, fitting_losses
+
+# Calculate pressure losses for both fans
+print("\n=== Fan 1 (Ground Floor & Cafeteria) Pressure Loss Calculation ===")
+fan1_pressure_pa, fan1_pressure_inwg, fan1_straight, fan1_fittings = calculate_path_pressure_loss(fan1_critical_path, fan1_total_m3h)
+
+print("\n=== Fan 2 (Floors 1 & 2) Pressure Loss Calculation ===")
+fan2_pressure_pa, fan2_pressure_inwg, fan2_straight, fan2_fittings = calculate_path_pressure_loss(fan2_critical_path, fan2_total_m3h)
+
+# Fan selection recommendation
+def recommend_fan(airflow_cfm, pressure_inwg, system_name):
+    safety_factor = 1.3  # Add 30% safety factor
+    design_airflow = airflow_cfm * safety_factor
+    design_pressure = pressure_inwg * safety_factor
+    
+    print(f"\n=== Fan Recommendation for {system_name} ===")
+    print(f"Required airflow: {airflow_cfm:.2f} CFM")
+    print(f"Required static pressure: {pressure_inwg:.4f} inWG")
+    print(f"Design airflow (with safety factor): {design_airflow:.2f} CFM")
+    print(f"Design static pressure (with safety factor): {design_pressure:.4f} inWG")
+    
+    # Fan model recommendations based on performance requirements
+    # This is a simplified selection - in reality, you'd look at fan curves
+    if design_airflow < 500:
+        fan_size = "Small"
+    elif design_airflow < 1000:
+        fan_size = "Medium"
     else:
-        print("No suitable fans found. Consider custom fan selection.")
-    
-    # Recommend fans for System 2
-    recommended_fans_system2 = recommend_fans(
-        system2_flow_with_safety, 
-        system2_pressure_with_safety, 
-        commercial_fans
-    )
-    
-    print("\nRecommended fans for System 2 (First and Second Floors):")
-    if recommended_fans_system2:
-        for i, fan in enumerate(recommended_fans_system2[:3]):  # Top 3 recommendations
-            print("{}. {} ({})".format(i+1, fan['model'], fan['type']))
-            print("   Max Flow: {:.0f} CFM, Max Pressure: {:.2f} inwg".format(
-                fan['max_flow_cfm'], fan['max_pressure_inwg']))
-            print("   Power: {:.2f} HP ({:.0f} W), RPM: {:.0f}".format(
-                fan['power_hp'], fan['power_watts'], fan['rpm']))
+        fan_size = "Large"
+        
+    if design_pressure < 0.5:
+        pressure_class = "Low Pressure"
+    elif design_pressure < 1.0:
+        pressure_class = "Medium Pressure"
     else:
-        print("No suitable fans found. Consider custom fan selection.")
+        pressure_class = "High Pressure"
     
-    # Generate fan performance curves (simplified)
-    def plot_fan_curve(fan_model, required_flow, required_pressure):
-        # Create a simplified fan curve
-        flow_points = np.linspace(0, fan_model['max_flow_cfm'] * 1.1, 100)
-        
-        # Simple quadratic curve: P = Pmax * (1 - (Q/Qmax)²)
-        pressure_points = [fan_model['max_pressure_inwg'] * (1 - (q/fan_model['max_flow_cfm'])**2) for q in flow_points]
-        
-        plt.figure(figsize=(10, 6))
-        plt.plot(flow_points, pressure_points, 'b-', linewidth=2, label=fan_model['model'])
-        plt.scatter([required_flow], [required_pressure], color='red', s=100, marker='x', 
-                    label='Required Operating Point')
-        
-        plt.title(f"Fan Performance Curve: {fan_model['model']}")
-        plt.xlabel("Flow Rate (CFM)")
-        plt.ylabel("Static Pressure (inwg)")
-        plt.grid(True)
-        plt.legend()
-        
-        plt.axhline(y=required_pressure, color='r', linestyle='--', alpha=0.3)
-        plt.axvline(x=required_flow, color='r', linestyle='--', alpha=0.3)
-        
-        plt.tight_layout()
-        return plt
+    print(f"Recommended fan type: Centrifugal {fan_size}, {pressure_class} class")
     
-    # Plot fan curves for the top recommendations
-    if recommended_fans_system1:
-        plot1 = plot_fan_curve(
-            recommended_fans_system1[0], 
-            system1_flow_with_safety, 
-            system1_pressure_with_safety
-        )
-        plot1.savefig('system1_fan_curve.png')
-        print("\nFan curve for System 1 saved as 'system1_fan_curve.png'")
-    
-    if recommended_fans_system2:
-        plot2 = plot_fan_curve(
-            recommended_fans_system2[0], 
-            system2_flow_with_safety, 
-            system2_pressure_with_safety
-        )
-        plot2.savefig('system2_fan_curve.png')
-        print("Fan curve for System 2 saved as 'system2_fan_curve.png'")
-    
-    print("\n=== Ventilation System Summary ===")
-    print("Air changes per hour: {}".format(AIR_CHANGES_PER_HOUR))
-    print("Total volume - System 1: {:.1f} m³".format(
-        system1['flow_rate_m3_s'] * 3600 / AIR_CHANGES_PER_HOUR))
-    print("Total volume - System 2: {:.1f} m³".format(
-        system2['flow_rate_m3_s'] * 3600 / AIR_CHANGES_PER_HOUR))
-    print("\nNotes:")
-    print("1. All calculations include a 25% safety factor")
-    print("2. Fan selection should be verified with manufacturer data")
-    print("3. Installation should comply with local building codes")
-    print("4. Final selection may need adjustments based on actual installation conditions")
+    # Example commercial models (these would need to be replaced with actual models)
+    if system_name == "Fan 1 (Ground Floor & Cafeteria)":
+        if fan_size == "Small" and pressure_class == "Low Pressure":
+            return "Greenheck SQ-85-VG, FANTECH FKD 10XL, or equivalent"
+        elif fan_size == "Small" and pressure_class == "Medium Pressure":
+            return "Greenheck SQ-100-VG, FANTECH FKD 12XL, or equivalent"
+        elif fan_size == "Medium" and pressure_class == "Low Pressure":
+            return "Greenheck SQ-120-VG, FANTECH FKD 14, or equivalent"
+        elif fan_size == "Medium" and pressure_class == "Medium Pressure":
+            return "Greenheck SQ-140-VG, FANTECH FKD 16XL, or equivalent"
+        else:
+            return "Greenheck SQ-160-VG, FANTECH FKD 18XL, or equivalent"
+    else:  # Fan 2
+        if fan_size == "Small" and pressure_class == "Low Pressure":
+            return "Greenheck SQ-85-VG, FANTECH FKD 10XL, or equivalent"
+        elif fan_size == "Small" and pressure_class == "Medium Pressure":
+            return "Greenheck SQ-100-VG, FANTECH FKD 12XL, or equivalent"
+        elif fan_size == "Medium" and pressure_class == "Low Pressure":
+            return "Greenheck SQ-120-VG, FANTECH FKD 14, or equivalent"
+        elif fan_size == "Medium" and pressure_class == "Medium Pressure":
+            return "Greenheck SQ-140-VG, FANTECH FKD 16XL, or equivalent"
+        else:
+            return "Greenheck SQ-160-VG, FANTECH FKD 18XL, or equivalent"
 
-if __name__ == "__main__":
-    main()
+# Check if airflow velocities are within recommended ranges
+def check_airflow_velocities(path, total_airflow_m3h):
+    print("\n=== Airflow Velocity Check ===")
+    print("-" * 70)
+    print(f"{'Section':<25} {'Size':<15} {'Velocity (m/s)':<15} {'Status':<15}")
+    print("-" * 70)
+    
+    all_ok = True
+    
+    # Recommended velocity ranges based on ASHRAE standards
+    # For bathroom ventilation ducts - these are simplified ranges
+    min_velocity = 2.5  # m/s (to prevent settling)
+    max_velocity = 10.0  # m/s (to prevent noise)
+    
+    # For grilles, the velocity should be lower
+    min_grille_velocity = 1.0  # m/s
+    max_grille_velocity = 3.0  # m/s
+    
+    for section in path:
+        # For circular ducts, both dimensions are the same (diameter)
+        if section['dim'][0] == section['dim'][1]:  # Circular duct
+            area = math.pi * (inch_to_meter(section['dim'][0])/2)**2
+            size_str = f"{section['dim'][0]}\" diameter"
+        else:  # Rectangular duct
+            area = calculate_area(section['dim'][0], section['dim'][1])
+            size_str = f"{section['dim'][0]}\"x{section['dim'][1]}\""
+        
+        velocity = calculate_velocity(total_airflow_m3h, area)
+        
+        # Check if it's a grille or entry point
+        if section['type'] == 'entry':
+            status = "OK" if min_grille_velocity <= velocity <= max_grille_velocity else "REVIEW"
+            if status == "REVIEW":
+                all_ok = False
+        else:
+            status = "OK" if min_velocity <= velocity <= max_velocity else "REVIEW"
+            if status == "REVIEW":
+                all_ok = False
+        
+        print(f"{section['section']:<25} {size_str:<15} {velocity:.2f} m/s      {status:<15}")
+    
+    print("-" * 70)
+    if all_ok:
+        print("All velocities are within recommended ranges.")
+    else:
+        print("Some sections need review. Velocities should be:")
+        print(f"- Ducts: {min_velocity} - {max_velocity} m/s")
+        print(f"- Grilles: {min_grille_velocity} - {max_grille_velocity} m/s")
+    
+    return all_ok
+
+# Get fan recommendations
+fan1_recommendation = recommend_fan(fan1_total_cfm, fan1_pressure_inwg, "Fan 1 (Ground Floor & Cafeteria)")
+fan2_recommendation = recommend_fan(fan2_total_cfm, fan2_pressure_inwg, "Fan 2 (Floors 1 & 2)")
+
+print(f"\nRecommended model for Fan 1: {fan1_recommendation}")
+print(f"Recommended model for Fan 2: {fan2_recommendation}")
+
+# Check velocities
+print("\nChecking velocities for Fan 1 system:")
+fan1_velocities_ok = check_airflow_velocities(fan1_critical_path, fan1_total_m3h)
+
+print("\nChecking velocities for Fan 2 system:")
+fan2_velocities_ok = check_airflow_velocities(fan2_critical_path, fan2_total_m3h)
+
+# Calculate proper load correction for high altitude and temperature/humidity
+def altitude_correction_factor(altitude, temp, rh):
+    # Standard air density at sea level (kg/m³)
+    rho_0 = 1.225
+    
+    # Calculate actual air density
+    rho_actual = calculate_air_density(altitude, temp, rh)
+    
+    # Correction factor is the ratio of standard to actual density
+    return rho_0 / rho_actual
+
+# Calculate correction factors for different conditions
+std_correction = altitude_correction_factor(ALTITUDE, STANDARD_TEMP, STANDARD_RH)
+hot_humid_correction = altitude_correction_factor(ALTITUDE, 28, 0.93)
+cold_dry_correction = altitude_correction_factor(ALTITUDE, 16, 0.30)
+
+print("\n=== Altitude and Climate Correction Factors ===")
+print(f"Standard conditions (25°C, 60% RH): {std_correction:.3f}")
+print(f"Hot humid conditions (28°C, 93% RH): {hot_humid_correction:.3f}")
+print(f"Cold dry conditions (16°C, 30% RH): {cold_dry_correction:.3f}")
+
+print("\nFinal Fan Requirements (with standard condition correction):")
+print(f"Fan 1: {fan1_total_cfm * std_correction:.2f} CFM at {fan1_pressure_inwg:.4f} inWG")
+print(f"Fan 2: {fan2_total_cfm * std_correction:.2f} CFM at {fan2_pressure_inwg:.4f} inWG")
+
+# Visualize the pressure loss breakdown for both fans
+def plot_pressure_losses(straight_losses, fitting_losses, fan_name):
+    total_loss = sum(straight_losses) + sum(fitting_losses)
+    
+    # Calculate percentages
+    straight_pct = sum(straight_losses) / total_loss * 100
+    fitting_pct = sum(fitting_losses) / total_loss * 100
+    
+    # Create pie chart
+    labels = ['Straight Duct Losses', 'Fitting Losses']
+    sizes = [straight_pct, fitting_pct]
+    colors = ['lightblue', 'lightgreen']
+    
+    plt.figure(figsize=(8, 6))
+    plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+    plt.axis('equal')
+    plt.title(f'Pressure Loss Breakdown for {fan_name}')
+    plt.tight_layout()
+    
+    # Save the chart
+    filename = f"{fan_name.replace(' ', '_').replace('(', '').replace(')', '')}_pressure_loss.png"
+    plt.savefig(filename)
+    print(f"\nPressure loss breakdown chart saved as {filename}")
+    
+    # Close the figure to free memory
+    plt.close()
+
+# Generate pressure loss charts
+plot_pressure_losses(fan1_straight, fan1_fittings, "Fan 1 (Ground Floor & Cafeteria)")
+plot_pressure_losses(fan2_straight, fan2_fittings, "Fan 2 (Floors 1 & 2)")
+
+print("\n=== Final Recommendations ===")
+print("Based on the calculations for the bathroom ventilation system:")
+
+if fan1_velocities_ok:
+    print(f"1. For Fan 1 (Ground Floor & Cafeteria): {fan1_recommendation}")
+    print(f"   - Required capacity: {fan1_total_cfm * std_correction:.2f} CFM at {fan1_pressure_inwg:.4f} inWG")
+else:
+    print("1. Fan 1 system needs duct size revisions to maintain proper velocities.")
+
+if fan2_velocities_ok:
+    print(f"2. For Fan 2 (Floors 1 & 2): {fan2_recommendation}")
+    print(f"   - Required capacity: {fan2_total_cfm * std_correction:.2f} CFM at {fan2_pressure_inwg:.4f} inWG")
+else:
+    print("2. Fan 2 system needs duct size revisions to maintain proper velocities.")
+
+print("\nNotes:")
+print("- All fans should be centrifugal type with backward-curved blades for efficient operation.")
+print("- Fans should be installed with vibration isolators to minimize noise transmission.")
+print("- Fan motors should be TEFC (Totally Enclosed Fan Cooled) rated for continuous operation.")
+print("- Consider variable speed drives for energy savings during periods of lower occupancy.")
+print("- Ensure all duct connections are properly sealed to prevent air leakage.")
+print("- Install backdraft dampers to prevent reverse airflow when fans are not operating.")
+
