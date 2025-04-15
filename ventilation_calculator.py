@@ -2,13 +2,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
+import math
 
 # Constants and conversion factors
 INCH_TO_M = 0.0254
 FT_TO_M = 0.3048
 CFM_TO_M3S = 0.000471947
-PA_TO_INWG = 0.00402
 M3S_TO_CFM = 1/CFM_TO_M3S
+PA_TO_INWG = 0.00402
+INWG_TO_PA = 248.84
 
 # Climate conditions
 climate_conditions = {
@@ -21,303 +23,572 @@ climate_conditions = {
 altitude = 850  # meters above sea level
 
 # Air density calculation based on temperature, humidity and altitude
-def air_density(temp_c, humidity, altitude_m):
-    # Barometric pressure at altitude (Pa)
+def air_density(temp_c, rel_humidity, alt_m):
+    # Barometric pressure at altitude
     p0 = 101325  # sea level standard pressure, Pa
     g = 9.80665  # gravitational acceleration, m/s²
     M = 0.0289644  # molar mass of dry air, kg/mol
     R = 8.31447  # universal gas constant, J/(mol·K)
     T0 = 288.15  # sea level standard temperature, K
-
-    # Temperature lapse rate, K/m
-    L = 0.0065
-
-    # Barometric pressure at altitude
-    p = p0 * (1 - L * altitude_m / T0) ** (g * M / (R * L))
-
-    # Saturation vapor pressure (Pa)
+    L = 0.0065  # temperature lapse rate, K/m
+    
+    # Barometric formula
     temp_k = temp_c + 273.15
+    p = p0 * (1 - L * alt_m / T0) ** (g * M / (R * L))
+    
+    # Saturation vapor pressure
     es = 611.2 * np.exp(17.67 * temp_c / (temp_c + 243.5))
-
-    # Actual vapor pressure (Pa)
-    e = humidity / 100 * es
-
-    # Density of moist air (kg/m³)
-    Rd = 287.058  # specific gas constant for dry air, J/(kg·K)
+    
+    # Actual vapor pressure
+    e = rel_humidity / 100 * es
+    
+    # Density of moist air
+    Rd = 287.05  # specific gas constant for dry air, J/(kg·K)
     Rv = 461.495  # specific gas constant for water vapor, J/(kg·K)
-
+    
     density = (p - e) / (Rd * temp_k) + e / (Rv * temp_k)
-
+    
     return density
 
-# Room data
-rooms = {
-    'PB_Bano_C': {'volume': 25, 'grids': [{'size': (4, 11), 'count': 2}]},
-    'PB_Bano_D': {'volume': 18, 'grids': [{'size': (6, 11), 'count': 3}]},
-    'Cafetin_Bano_C': {'volume': 6.5, 'grids': [{'size': (7.5, 10), 'count': 1}]},
-    'Cafetin_Bano_D': {'volume': 9, 'grids': [{'size': (7.5, 11), 'count': 2}]},
-    'Piso1_Bano_C': {'volume': 10, 'grids': [{'size': (6, 14), 'count': 3}]},
-    'Piso1_Bano_D': {'volume': 10, 'grids': [{'size': (6, 14), 'count': 3}]},
-    'Piso2_Bano_C': {'volume': 10, 'grids': [{'size': (4, 11), 'count': 3}]},
-    'Piso2_Bano_D': {'volume': 10, 'grids': [{'size': (4, 11), 'count': 3}]}
-}
+# Function to calculate duct area
+def duct_area(width_inch, height_inch):
+    width_m = width_inch * INCH_TO_M
+    height_m = height_inch * INCH_TO_M
+    return width_m * height_m
 
-# Duct system data
-duct_systems = {
-    'System1': {  # PB and Cafetin
-        'rooms': ['PB_Bano_C', 'PB_Bano_D', 'Cafetin_Bano_C', 'Cafetin_Bano_D'],
-        'sections': [
-            {'name': 'PB_C_main', 'shape': 'rectangular', 'size': (6, 11), 'length': 4, 'connected_to': 'PB_C_expansion'},
-            {'name': 'PB_C_expansion', 'shape': 'rectangular', 'size': (11, 11), 'length': 2, 'connected_to': 'PB_C_elbow'},
-            {'name': 'PB_C_elbow', 'shape': 'elbow', 'size': (11, 11), 'angle': 90, 'connected_to': 'PB_C_transition'},
-            {'name': 'PB_C_transition', 'shape': 'transition', 'size_in': (11, 11), 'size_out': (12.5, 12.5), 'connected_to': 'PB_C_vertical'},
-            {'name': 'PB_C_vertical', 'shape': 'circular', 'diameter': 12.5, 'length': 6, 'connected_to': 'PB_C_final_elbow'},
-            {'name': 'PB_C_final_elbow', 'shape': 'elbow', 'diameter': 12.5, 'angle': 90, 'connected_to': 'fan1'},
+# Function to calculate circular duct area
+def circular_duct_area(diameter_inch):
+    radius_m = (diameter_inch / 2) * INCH_TO_M
+    return np.pi * radius_m**2
 
-            {'name': 'PB_D_main', 'shape': 'rectangular', 'size': (6, 11), 'length': 4, 'connected_to': 'PB_C_main'},
+# Function to calculate hydraulic diameter
+def hydraulic_diameter(width_inch, height_inch):
+    width_m = width_inch * INCH_TO_M
+    height_m = height_inch * INCH_TO_M
+    return 2 * (width_m * height_m) / (width_m + height_m)
 
-            {'name': 'Cafetin_C_main', 'shape': 'circular', 'diameter': 10, 'length': 1.44, 'connected_to': 'Cafetin_C_elbow'},
-            {'name': 'Cafetin_C_elbow', 'shape': 'elbow', 'diameter': 10, 'angle': 90, 'connected_to': 'PB_C_vertical'},
+# Function to calculate air velocity in a duct
+def air_velocity(flow_rate_m3s, area_m2):
+    return flow_rate_m3s / area_m2
 
-            {'name': 'Cafetin_D_main', 'shape': 'circular', 'diameter': 10, 'length': 2, 'connected_to': 'Cafetin_C_main'}
-        ]
+# Function to calculate pressure loss in a duct
+def pressure_loss(velocity, length, hydraulic_diam, k_factors, density):
+    # Friction factor (assuming turbulent flow in commercial ducts)
+    f = 0.02  
+    
+    # Pressure loss due to friction
+    dp_friction = f * (length / hydraulic_diam) * (density * velocity**2 / 2)
+    
+    # Pressure loss due to fittings
+    dp_fittings = sum(k_factors) * (density * velocity**2 / 2)
+    
+    return dp_friction + dp_fittings
+
+# Function to calculate required air changes per hour based on room volume
+def required_ach(room_volume_m3, min_velocity_m_s, grille_area_m2):
+    # Calculate minimum flow rate to maintain minimum velocity at grilles
+    min_flow_rate_m3s = min_velocity_m_s * grille_area_m2
+    
+    # Convert to air changes per hour
+    ach = min_flow_rate_m3s * 3600 / room_volume_m3
+    
+    # Ensure minimum ACH for bathrooms (typically 8-15 ACH)
+    return max(ach, 10)
+
+# Define bathroom spaces
+bathrooms = {
+    'PB_Bano_C': {
+        'volume_m3': 25,
+        'grilles': [{'width': 4, 'height': 11, 'count': 2}],
+        'ducts': [
+            {'width': 6, 'height': 11, 'length': 4, 'k_factors': [0.5]},  # Main duct
+            {'width': 11, 'height': 11, 'length': 2, 'k_factors': [0.5]},  # Expansion
+            {'diameter': 12.5, 'length': 6, 'k_factors': [0.9, 0.9]}  # Vertical duct with 2 elbows
+        ],
+        'system': 'system1'
     },
-    'System2': {  # Piso 1 and Piso 2
-        'rooms': ['Piso1_Bano_C', 'Piso1_Bano_D', 'Piso2_Bano_C', 'Piso2_Bano_D'],
-        'sections': [
-            {'name': 'Piso1_C_main', 'shape': 'rectangular', 'size': (11, 6), 'length': 3.2, 'connected_to': 'Piso1_C_elbow'},
-            {'name': 'Piso1_C_elbow', 'shape': 'elbow', 'size': (11, 6), 'angle': 90, 'connected_to': 'Piso1_C_vertical'},
-            {'name': 'Piso1_C_vertical', 'shape': 'rectangular', 'size': (11, 6), 'length': 3.5, 'connected_to': 'Piso2_main'},
-
-            {'name': 'Piso1_D_main', 'shape': 'rectangular', 'size': (11, 6), 'length': 3.2, 'connected_to': 'Piso1_D_elbow'},
-            {'name': 'Piso1_D_elbow', 'shape': 'elbow', 'size': (11, 6), 'angle': 90, 'connected_to': 'Piso1_D_vertical'},
-            {'name': 'Piso1_D_vertical', 'shape': 'rectangular', 'size': (11, 6), 'length': 3.5, 'connected_to': 'Piso2_main'},
-
-            {'name': 'Piso2_C_main', 'shape': 'rectangular', 'size': (11, 6), 'length': 3.2, 'connected_to': 'Piso2_main'},
-            {'name': 'Piso2_D_main', 'shape': 'rectangular', 'size': (11, 6), 'length': 3.2, 'connected_to': 'Piso2_main'},
-
-            {'name': 'Piso2_main', 'shape': 'rectangular', 'size': (11, 11), 'length': 12, 'connected_to': 'Piso2_transition'},
-            {'name': 'Piso2_transition', 'shape': 'transition', 'size_in': (11, 11), 'size_out': (12, 12), 'connected_to': 'fan2'}
-        ]
+    'PB_Bano_D': {
+        'volume_m3': 18,
+        'grilles': [{'width': 6, 'height': 11, 'count': 3}],
+        'ducts': [
+            {'width': 6, 'height': 11, 'length': 4, 'k_factors': [0.9, 0.5]}  # Main duct with elbow
+        ],
+        'connects_to': 'PB_Bano_C',
+        'system': 'system1'
+    },
+    'Cafetin_Bano_C': {
+        'volume_m3': 6.5,
+        'grilles': [{'width': 7.5, 'height': 10, 'count': 1}],
+        'ducts': [
+            {'diameter': 10, 'length': 1.44, 'k_factors': [0.9]},  # Duct with elbow
+        ],
+        'connects_to': 'PB_Bano_C',
+        'system': 'system1'
+    },
+    'Cafetin_Bano_D': {
+        'volume_m3': 9,
+        'grilles': [{'width': 7.5, 'height': 11, 'count': 2}],
+        'ducts': [
+            {'diameter': 10, 'length': 2, 'k_factors': [0.5]}  # Connecting duct
+        ],
+        'connects_to': 'Cafetin_Bano_C',
+        'system': 'system1'
+    },
+    'Piso1_Bano_C': {
+        'volume_m3': 10,
+        'grilles': [{'width': 6, 'height': 14, 'count': 3}],
+        'ducts': [
+            {'width': 11, 'height': 6, 'length': 3.2, 'k_factors': [0.5]},
+            {'width': 11, 'height': 6, 'length': 3.5, 'k_factors': [0.9, 1.0]}  # Vertical duct with elbow and T-junction
+        ],
+        'connects_to': 'Ducto_Principal_Piso2',
+        'system': 'system2'
+    },
+    'Piso1_Bano_D': {
+        'volume_m3': 10,
+        'grilles': [{'width': 6, 'height': 14, 'count': 3}],
+        'ducts': [
+            {'width': 11, 'height': 6, 'length': 3.2, 'k_factors': [0.5]},
+            {'width': 11, 'height': 6, 'length': 3.5, 'k_factors': [0.9, 1.0]}  # Vertical duct with elbow and T-junction
+        ],
+        'connects_to': 'Ducto_Principal_Piso2',
+        'system': 'system2'
+    },
+    'Piso2_Bano_C': {
+        'volume_m3': 10,
+        'grilles': [{'width': 4, 'height': 11, 'count': 3}],
+        'ducts': [
+            {'width': 11, 'height': 6, 'length': 3.2, 'k_factors': [1.0]}  # Duct with T-junction
+        ],
+        'connects_to': 'Ducto_Principal_Piso2',
+        'system': 'system2'
+    },
+    'Piso2_Bano_D': {
+        'volume_m3': 10,
+        'grilles': [{'width': 4, 'height': 11, 'count': 3}],
+        'ducts': [
+            {'width': 11, 'height': 6, 'length': 3.2, 'k_factors': [1.0]}  # Duct with T-junction
+        ],
+        'connects_to': 'Ducto_Principal_Piso2',
+        'system': 'system2'
+    },
+    'Ducto_Principal_Piso2': {
+        'volume_m3': 0,  # Not a room, just a duct
+        'grilles': [],
+        'ducts': [
+            {'width': 11, 'height': 11, 'length': 12, 'k_factors': [0.5]},
+            {'diameter': 12, 'length': 1, 'k_factors': [0.5]}  # Transition to circular
+        ],
+        'system': 'system2'
     }
 }
 
-# Ventilation standards
-min_air_changes = {
-    'bathroom': 8,  # Air changes per hour for bathrooms
-    'recommended': 12  # Recommended air changes per hour
-}
+# Minimum and maximum recommended velocities (m/s)
+min_velocity_grille = 2.5  # m/s
+max_velocity_grille = 4.0  # m/s
+min_velocity_duct = 3.0    # m/s
+max_velocity_duct = 10.0   # m/s
 
-# Velocity standards (m/s)
-velocity_standards = {
-    'min_duct': 2.5,  # Minimum velocity in ducts
-    'max_duct': 10.0,  # Maximum velocity in ducts
-    'min_grid': 1.0,   # Minimum velocity at grids
-    'max_grid': 2.5    # Maximum velocity at grids
-}
-
-def calculate_required_airflow(room_volume, air_changes):
-    """Calculate required airflow in m³/s based on room volume and air changes per hour"""
-    return room_volume * air_changes / 3600  # Convert from m³/h to m³/s
-
-def calculate_grid_area(grid_size):
-    """Calculate grid area in m² from dimensions in inches"""
-    width, height = grid_size
-    return (width * INCH_TO_M) * (height * INCH_TO_M)
-
-def calculate_duct_area(duct_size_or_diameter, shape='rectangular'):
-    """Calculate duct area in m² from dimensions in inches"""
-    if shape == 'rectangular':
-        width, height = duct_size_or_diameter
-        return (width * INCH_TO_M) * (height * INCH_TO_M)
-    elif shape == 'circular':
-        diameter = duct_size_or_diameter
-        return np.pi * ((diameter * INCH_TO_M) / 2) ** 2
-    else:
-        raise ValueError(f"Unknown shape: {shape}")
-
-def calculate_hydraulic_diameter(duct_size, shape='rectangular'):
-    """Calculate hydraulic diameter in m from dimensions in inches"""
-    if shape == 'rectangular':
-        width, height = duct_size
-        width_m, height_m = width * INCH_TO_M, height * INCH_TO_M
-        return 4 * (width_m * height_m) / (2 * (width_m + height_m))
-    elif shape == 'circular':
-        return duct_size * INCH_TO_M
-    else:
-        raise ValueError(f"Unknown shape: {shape}")
-
-def calculate_velocity(airflow, area):
-    """Calculate velocity in m/s from airflow (m³/s) and area (m²)"""
-    return airflow / area
-
-def calculate_pressure_loss(airflow, section, density):
-    """Calculate pressure loss in Pa for a duct section"""
-    if section['shape'] == 'rectangular':
-        area = calculate_duct_area(section['size'], 'rectangular')
-        dh = calculate_hydraulic_diameter(section['size'], 'rectangular')
-        velocity = calculate_velocity(airflow, area)
-
-        # Friction factor (Colebrook equation approximation)
-        roughness = 0.00015  # m, typical for galvanized steel
-        reynolds = velocity * dh * density / 1.81e-5  # Reynolds number
-
-        # Use Swamee-Jain equation for friction factor
-        if reynolds > 2300:
-            f = 0.25 / (np.log10(roughness/(3.7*dh) + 5.74/reynolds**0.9))**2
-        else:
-            f = 64 / reynolds
-
-        # Pressure loss due to friction
-        pressure_loss = f * (section['length'] / dh) * (density * velocity**2 / 2)
-
-    elif section['shape'] == 'circular':
-        area = calculate_duct_area(section['diameter'], 'circular')
-        dh = calculate_hydraulic_diameter(section['diameter'], 'circular')
-        velocity = calculate_velocity(airflow, area)
-
-        # Friction factor
-        roughness = 0.00015  # m
-        reynolds = velocity * dh * density / 1.81e-5
-
-        if reynolds > 2300:
-            f = 0.25 / (np.log10(roughness/(3.7*dh) + 5.74/reynolds**0.9))**2
-        else:
-            f = 64 / reynolds
-
-        pressure_loss = f * (section['length'] / dh) * (density * velocity**2 / 2)
-
-    elif section['shape'] == 'elbow':
-        if 'diameter' in section:
-            area = calculate_duct_area(section['diameter'], 'circular')
-            velocity = calculate_velocity(airflow, area)
-        else:
-            area = calculate_duct_area(section['size'], 'rectangular')
-            velocity = calculate_velocity(airflow, area)
-
-        # Loss coefficient for 90° elbow
-        k = 0.3 if section['angle'] == 90 else 0.2
-
-        pressure_loss = k * (density * velocity**2 / 2)
-
-    elif section['shape'] == 'transition':
-        area_in = calculate_duct_area(section['size_in'], 'rectangular')
-        area_out = calculate_duct_area(section['size_out'], 'rectangular' if len(section['size_out']) == 2 else 'circular')
-
-        velocity_in = calculate_velocity(airflow, area_in)
-        velocity_out = calculate_velocity(airflow, area_out)
-
-        # Loss coefficient for expansion or contraction
-        if area_out > area_in:  # Expansion
-            k = (1 - area_in/area_out)**2
-        else:  # Contraction
-            k = 0.5 * (1 - area_out/area_in)
-
-        pressure_loss = k * (density * velocity_out**2 / 2)
-
-    else:
-        raise ValueError(f"Unknown section shape: {section['shape']}")
-
-    return pressure_loss
-
-def analyze_ventilation_system():
-    """Analyze the ventilation system and recommend changes"""
-    results = {}
-
-    # Use the worst climatic case for calculations
-    worst_case = 'extreme_hot_humid'  # Typically the hot and humid condition is worst for ventilation
-    temp = climate_conditions[worst_case]['temperature']
-    humidity = climate_conditions[worst_case]['humidity']
-    # Calculate air density for the worst case
+def analyze_ventilation_system(climate_condition='extreme_hot_humid'):
+    # Get climate parameters
+    temp = climate_conditions[climate_condition]['temperature']
+    humidity = climate_conditions[climate_condition]['humidity']
+    
+    # Calculate air density
     density = air_density(temp, humidity, altitude)
-
-    # Analyze each system
-    for system_name, system in duct_systems.items():
-        system_results = {
-            'rooms': {},
-            'total_airflow': 0,
-            'pressure_loss': 0,
-            'sections': {}
+    print(f"Air density at {temp}°C, {humidity}% RH, {altitude}m altitude: {density:.4f} kg/m³")
+    
+    # Calculate total grille area and required flow rate for each bathroom
+    results = {}
+    system_flow_rates = {'system1': 0, 'system2': 0}
+    system_pressure_losses = {'system1': 0, 'system2': 0}
+    
+    for bathroom_name, bathroom in bathrooms.items():
+        if bathroom_name == 'Ducto_Principal_Piso2':
+            continue  # Skip the main duct for now
+            
+        # Calculate total grille area
+        total_grille_area = 0
+        for grille in bathroom['grilles']:
+            grille_area = duct_area(grille['width'], grille['height']) * grille['count']
+            total_grille_area += grille_area
+        
+        # Calculate required air changes per hour
+        ach = required_ach(bathroom['volume_m3'], min_velocity_grille, total_grille_area)
+        
+        # Calculate required flow rate
+        flow_rate_m3h = ach * bathroom['volume_m3']
+        flow_rate_m3s = flow_rate_m3h / 3600
+        
+        # Calculate grille velocity
+        grille_velocity = flow_rate_m3s / total_grille_area if total_grille_area > 0 else 0
+        
+        # Adjust flow rate if grille velocity is too low
+        if grille_velocity < min_velocity_grille and total_grille_area > 0:
+            flow_rate_m3s = min_velocity_grille * total_grille_area
+            flow_rate_m3h = flow_rate_m3s * 3600
+            ach = flow_rate_m3h / bathroom['volume_m3']
+            grille_velocity = min_velocity_grille
+        
+        # Calculate duct velocities and pressure losses
+        duct_velocities = []
+        pressure_losses = []
+        
+        for duct in bathroom['ducts']:
+            if 'diameter' in duct:
+                area = circular_duct_area(duct['diameter'])
+                hyd_diam = duct['diameter'] * INCH_TO_M
+            else:
+                area = duct_area(duct['width'], duct['height'])
+                hyd_diam = hydraulic_diameter(duct['width'], duct['height'])
+            
+            velocity = air_velocity(flow_rate_m3s, area)
+            duct_velocities.append(velocity)
+            
+            loss = pressure_loss(velocity, duct['length'], hyd_diam, duct['k_factors'], density)
+            pressure_losses.append(loss)
+        
+        # Store results
+        results[bathroom_name] = {
+            'volume_m3': bathroom['volume_m3'],
+            'total_grille_area_m2': total_grille_area,
+            'air_changes_per_hour': ach,
+            'flow_rate_m3h': flow_rate_m3h,
+            'flow_rate_m3s': flow_rate_m3s,
+            'flow_rate_cfm': flow_rate_m3s * M3S_TO_CFM,
+            'grille_velocity_m_s': grille_velocity,
+            'duct_velocities_m_s': duct_velocities,
+            'pressure_losses_pa': pressure_losses,
+            'total_pressure_loss_pa': sum(pressure_losses),
+            'system': bathroom['system']
         }
+        
+        # Add to system totals
+        system_flow_rates[bathroom['system']] += flow_rate_m3s
+        
+        # For pressure loss, we need to consider the path
+        if 'connects_to' not in bathroom:
+            system_pressure_losses[bathroom['system']] = max(
+                system_pressure_losses[bathroom['system']],
+                sum(pressure_losses)
+            )
+    
+    # Now handle the main duct for system2
+    main_duct = bathrooms['Ducto_Principal_Piso2']
+    flow_rate_m3s = system_flow_rates['system2']
+    
+    duct_velocities = []
+    pressure_losses = []
+    
+    for duct in main_duct['ducts']:
+        if 'diameter' in duct:
+            area = circular_duct_area(duct['diameter'])
+            hyd_diam = duct['diameter'] * INCH_TO_M
+        else:
+            area = duct_area(duct['width'], duct['height'])
+            hyd_diam = hydraulic_diameter(duct['width'], duct['height'])
+        
+        velocity = air_velocity(flow_rate_m3
+velocity = air_velocity(flow_rate_m3s, area)
+        duct_velocities.append(velocity)
+        
+        loss = pressure_loss(velocity, duct['length'], hyd_diam, duct['k_factors'], density)
+        pressure_losses.append(loss)
+    
+    # Store results for main duct
+    results['Ducto_Principal_Piso2'] = {
+        'flow_rate_m3s': flow_rate_m3s,
+        'flow_rate_cfm': flow_rate_m3s * M3S_TO_CFM,
+        'duct_velocities_m_s': duct_velocities,
+        'pressure_losses_pa': pressure_losses,
+        'total_pressure_loss_pa': sum(pressure_losses),
+        'system': 'system2'
+    }
+    
+    # Add main duct pressure loss to system2
+    system_pressure_losses['system2'] += sum(pressure_losses)
+    
+    # Calculate fan requirements
+    fan_requirements = {}
+    for system, flow_rate in system_flow_rates.items():
+        fan_requirements[system] = {
+            'flow_rate_m3s': flow_rate,
+            'flow_rate_m3h': flow_rate * 3600,
+            'flow_rate_cfm': flow_rate * M3S_TO_CFM,
+            'pressure_pa': system_pressure_losses[system],
+            'pressure_inwg': system_pressure_losses[system] * PA_TO_INWG
+        }
+    
+    return results, fan_requirements
 
-        # Calculate required airflow for each room
-        for room_name in system['rooms']:
-            room = rooms[room_name]
+def suggest_improvements(results):
+    suggestions = {}
+    
+    for bathroom_name, data in results.items():
+        if bathroom_name == 'Ducto_Principal_Piso2':
+            continue
+            
+        suggestions[bathroom_name] = []
+        
+        # Check grille velocity
+        if 'grille_velocity_m_s' in data:
+            if data['grille_velocity_m_s'] < min_velocity_grille:
+                suggestions[bathroom_name].append(
+                    f"Grille velocity ({data['grille_velocity_m_s']:.2f} m/s) is below minimum ({min_velocity_grille} m/s). "
+                    f"Consider reducing grille size or increasing air changes per hour."
+                )
+            elif data['grille_velocity_m_s'] > max_velocity_grille:
+                suggestions[bathroom_name].append(
+                    f"Grille velocity ({data['grille_velocity_m_s']:.2f} m/s) is above maximum ({max_velocity_grille} m/s). "
+                    f"Consider increasing grille size or reducing air changes per hour."
+                )
+        
+        # Check duct velocities
+        if 'duct_velocities_m_s' in data:
+            for i, velocity in enumerate(data['duct_velocities_m_s']):
+                if velocity < min_velocity_duct:
+                    suggestions[bathroom_name].append(
+                        f"Duct {i+1} velocity ({velocity:.2f} m/s) is below minimum ({min_velocity_duct} m/s). "
+                        f"Consider reducing duct size or increasing flow rate."
+                    )
+                elif velocity > max_velocity_duct:
+                    suggestions[bathroom_name].append(
+                        f"Duct {i+1} velocity ({velocity:.2f} m/s) is above maximum ({max_velocity_duct} m/s). "
+                        f"Consider increasing duct size or reducing flow rate."
+                    )
+    
+    return suggestions
 
-            # Start with minimum air changes and adjust if needed
-            air_changes = min_air_changes['bathroom']
+def recommend_fans(fan_requirements):
+    fan_recommendations = {}
+    
+    # Define some commercial centrifugal fan models with their specifications
+    commercial_fans = {
+        'CF-100': {'max_flow_cfm': 100, 'max_pressure_inwg': 0.5, 'power_watts': 35},
+        'CF-200': {'max_flow_cfm': 200, 'max_pressure_inwg': 0.75, 'power_watts': 70},
+        'CF-300': {'max_flow_cfm': 300, 'max_pressure_inwg': 1.0, 'power_watts': 120},
+        'CF-500': {'max_flow_cfm': 500, 'max_pressure_inwg': 1.25, 'power_watts': 180},
+        'CF-750': {'max_flow_cfm': 750, 'max_pressure_inwg': 1.5, 'power_watts': 250},
+        'CF-1000': {'max_flow_cfm': 1000, 'max_pressure_inwg': 2.0, 'power_watts': 370},
+        'CF-1500': {'max_flow_cfm': 1500, 'max_pressure_inwg': 2.5, 'power_watts': 550},
+        'CF-2000': {'max_flow_cfm': 2000, 'max_pressure_inwg': 3.0, 'power_watts': 750}
+    }
+    
+    for system, requirements in fan_requirements.items():
+        suitable_fans = []
+        
+        for fan_model, specs in commercial_fans.items():
+            # Add 20% safety factor
+            required_flow = requirements['flow_rate_cfm'] * 1.2
+            required_pressure = requirements['pressure_inwg'] * 1.2
+            
+            if specs['max_flow_cfm'] >= required_flow and specs['max_pressure_inwg'] >= required_pressure:
+                suitable_fans.append({
+                    'model': fan_model,
+                    'max_flow_cfm': specs['max_flow_cfm'],
+                    'max_pressure_inwg': specs['max_pressure_inwg'],
+                    'power_watts': specs['power_watts'],
+                    'flow_margin': (specs['max_flow_cfm'] - required_flow) / required_flow * 100,
+                    'pressure_margin': (specs['max_pressure_inwg'] - required_pressure) / required_pressure * 100
+                })
+        
+        # Sort by closest match (lowest combined margin)
+        if suitable_fans:
+            suitable_fans.sort(key=lambda x: x['flow_margin'] + x['pressure_margin'])
+            fan_recommendations[system] = suitable_fans[0]
+        else:
+            fan_recommendations[system] = "No suitable fan found. Consider custom solutions."
+    
+    return fan_recommendations
 
-            # Calculate required airflow
-            required_airflow = calculate_required_airflow(room['volume'], air_changes)
+def generate_report(results, fan_requirements, suggestions, fan_recommendations, climate_condition):
+    print("\n===== VENTILATION SYSTEM ANALYSIS REPORT =====")
+    print(f"Climate condition: {climate_condition}")
+    print("\n--- BATHROOM DETAILS ---")
+    
+    for bathroom_name, data in results.items():
+        print(f"\n{bathroom_name}:")
+        if bathroom_name != 'Ducto_Principal_Piso2':
+            print(f"  Volume: {data['volume_m3']:.1f} m³")
+            print(f"  Air changes per hour: {data['air_changes_per_hour']:.1f}")
+        print(f"  Flow rate: {data['flow_rate_m3h']:.1f} m³/h ({data['flow_rate_cfm']:.1f} CFM)")
+        
+        if bathroom_name != 'Ducto_Principal_Piso2':
+            print(f"  Grille velocity: {data['grille_velocity_m_s']:.2f} m/s")
+        
+        print(f"  Duct velocities:")
+        for i, velocity in enumerate(data['duct_velocities_m_s']):
+            print(f"    Duct {i+1}: {velocity:.2f} m/s")
+        
+        print(f"  Total pressure loss: {data['total_pressure_loss_pa']:.1f} Pa ({data['total_pressure_loss_pa'] * PA_TO_INWG:.4f} inWG)")
+    
+    print("\n--- SYSTEM REQUIREMENTS ---")
+    for system, requirements in fan_requirements.items():
+        print(f"\n{system.upper()}:")
+        print(f"  Total flow rate: {requirements['flow_rate_m3h']:.1f} m³/h ({requirements['flow_rate_cfm']:.1f} CFM)")
+        print(f"  Total pressure: {requirements['pressure_pa']:.1f} Pa ({requirements['pressure_inwg']:.4f} inWG)")
+    
+    print("\n--- IMPROVEMENT SUGGESTIONS ---")
+    for bathroom_name, bathroom_suggestions in suggestions.items():
+        if bathroom_suggestions:
+            print(f"\n{bathroom_name}:")
+            for suggestion in bathroom_suggestions:
+                print(f"  - {suggestion}")
+    
+    print("\n--- FAN RECOMMENDATIONS ---")
+    for system, recommendation in fan_recommendations.items():
+        print(f"\n{system.upper()}:")
+        if isinstance(recommendation, dict):
+            print(f"  Recommended model: {recommendation['model']}")
+            print(f"  Maximum flow: {recommendation['max_flow_cfm']:.1f} CFM")
+            print(f"  Maximum pressure: {recommendation['max_pressure_inwg']:.4f} inWG")
+            print(f"  Power consumption: {recommendation['power_watts']} W")
+            print(f"  Flow margin: {recommendation['flow_margin']:.1f}%")
+            print(f"  Pressure margin: {recommendation['pressure_margin']:.1f}%")
+        else:
+            print(f"  {recommendation}")
 
-            # Calculate total grid area
-            total_grid_area = 0
-            for grid in room['grids']:
-                grid_area = calculate_grid_area(grid['size']) * grid['count']
-                total_grid_area += grid_area
+def plot_system_diagram(results, fan_recommendations):
+    # Create a new figure with a larger size
+    plt.figure(figsize=(15, 10))
+    
+    # Create two subplots for the two systems
+    plt.subplot(1, 2, 1)
+    plt.title('System 1: Ground Floor & Cafeteria')
+    
+    # Plot system 1 components
+    system1_bathrooms = [name for name, data in results.items() if data['system'] == 'system1']
+    
+    # Simple representation with boxes and lines
+    y_pos = 0
+    for bathroom in system1_bathrooms:
+        plt.text(0.1, y_pos, bathroom, fontsize=10, bbox=dict(facecolor='lightblue', alpha=0.5))
+        y_pos += 1
+    
+    # Add fan at the top
+    if isinstance(fan_recommendations['system1'], dict):
+        fan_text = f"Fan: {fan_recommendations['system1']['model']}\n{fan_recommendations['system1']['max_flow_cfm']} CFM, {fan_recommendations['system1']['max_pressure_inwg']:.2f} inWG"
+    else:
+        fan_text = "Fan: Not found"
+    
+    plt.text(0.5, y_pos + 1, fan_text, fontsize=12, bbox=dict(facecolor='lightgreen', alpha=0.5))
+    
+    # Connect bathrooms to fan
+    for i in range(len(system1_bathrooms)):
+        plt.plot([0.3, 0.5], [i, y_pos + 1], 'k-')
+    
+    plt.axis('off')
+    
+    # System 2
+    plt.subplot(1, 2, 2)
+    plt.title('System 2: Floor 1 & Floor 2')
+    
+    # Plot system 2 components
+    system2_bathrooms = [name for name, data in results.items() if data['system'] == 'system2' and name != 'Ducto_Principal_Piso2']
+    
+    # Simple representation with boxes and lines
+    y_pos = 0
+    for bathroom in system2_bathrooms:
+        plt.text(0.1, y_pos, bathroom, fontsize=10, bbox=dict(facecolor='lightblue', alpha=0.5))
+        y_pos += 1
+    
+    # Add main duct
+    plt.text(0.5, y_pos/2, 'Ducto_Principal_Piso2', fontsize=10, bbox=dict(facecolor='lightyellow', alpha=0.5))
+    
+    # Add fan at the top
+    if isinstance(fan_recommendations['system2'], dict):
+        fan_text = f"Fan: {fan_recommendations['system2']['model']}\n{fan_recommendations['system2']['max_flow_cfm']} CFM, {fan_recommendations['system2']['max_pressure_inwg']:.2f} inWG"
+    else:
+        fan_text = "Fan: Not found"
+    
+    plt.text(0.5, y_pos + 1, fan_text, fontsize=12, bbox=dict(facecolor='lightgreen', alpha=0.5))
+    
+    # Connect bathrooms to main duct
+    for i in range(len(system2_bathrooms)):
+        plt.plot([0.3, 0.5], [i, y_pos/2], 'k-')
+    
+    # Connect main duct to fan
+    plt.plot([0.5, 0.5], [y_pos/2, y_pos + 1], 'k-')
+    
+    plt.axis('off')
+    
+    plt.tight_layout()
+    plt.savefig('ventilation_system_diagram.png', dpi=300)
+    plt.close()
 
-            # Calculate velocity at grids
-            grid_velocity = calculate_velocity(required_airflow, total_grid_area)
-
-            # If grid velocity is below minimum, increase air changes
-            if grid_velocity < velocity_standards['min_grid']:
-                # Calculate minimum air changes needed to meet velocity standard
-                min_required_airflow = velocity_standards['min_grid'] * total_grid_area
-                min_air_changes = min_required_airflow * 3600 / room['volume']
-
-                # Update air changes and recalculate
-                air_changes = max(air_changes, min_air_changes)
-                required_airflow = calculate_required_airflow(room['volume'], air_changes)
-                grid_velocity = calculate_velocity(required_airflow, total_grid_area)
-
-            # If grid velocity is above maximum, suggest increasing grid size
-            grid_size_increase = None
-            if grid_velocity > velocity_standards['max_grid']:
-                # Calculate required grid area
-                required_grid_area = required_airflow / velocity_standards['max_grid']
-
-                # Calculate increase factor
-                increase_factor = required_grid_area / total_grid_area
-
-                # Suggest increasing grid size
-                grid_size_increase = {
-                    'current_area': total_grid_area,
-                    'required_area': required_grid_area,
-                    'increase_factor': increase_factor
-                }
-
-            # Store room results
-            system_results['rooms'][room_name] = {
-                'volume': room['volume'],
-                'air_changes': air_changes,
-                'required_airflow': required_airflow,
-                'grid_area': total_grid_area,
-                'grid_velocity': grid_velocity,
-                'grid_size_increase': grid_size_increase
+def main():
+    # Analyze for worst climate case
+    climate_condition = 'extreme_hot_humid'
+    results, fan_requirements = analyze_ventilation_system(climate_condition)
+    
+    # Generate suggestions for improvements
+    suggestions = suggest_improvements(results)
+    
+    # Recommend fans
+    fan_recommendations = recommend_fans(fan_requirements)
+    
+    # Generate report
+    generate_report(results, fan_requirements, suggestions, fan_recommendations, climate_condition)
+    
+    # Plot system diagram
+    plot_system_diagram(results, fan_recommendations)
+    
+    # Save results to CSV
+    results_df = pd.DataFrame()
+    for bathroom_name, data in results.items():
+        row = {
+            'Bathroom': bathroom_name,
+            'System': data['system']
+        }
+        
+        if bathroom_name != 'Ducto_Principal_Piso2':
+            row.update({
+                'Volume (m³)': data['volume_m3'],
+                'Air Changes per Hour': data['air_changes_per_hour'],
+                'Grille Velocity (m/s)': data['grille_velocity_m_s']
+            })
+        
+        row.update({
+            'Flow Rate (m³/h)': data['flow_rate_m3h'],
+            'Flow Rate (CFM)': data['flow_rate_cfm'],
+            'Total Pressure Loss (Pa)': data['total_pressure_loss_pa']
+        })
+        
+        results_df = pd.concat([results_df, pd.DataFrame([row])], ignore_index=True)
+    
+    results_df.to_csv('ventilation_results.csv', index=False)
+    
+    # Save fan recommendations to CSV
+    fan_df = pd.DataFrame()
+    for system, recommendation in fan_recommendations.items():
+        if isinstance(recommendation, dict):
+            row = {
+                'System': system,
+                'Model': recommendation['model'],
+                'Max Flow (CFM)': recommendation['max_flow_cfm'],
+                'Max Pressure (inWG)': recommendation['max_pressure_inwg'],
+                'Power (W)': recommendation['power_watts'],
+                'Flow Margin (%)': recommendation['flow_margin'],
+                'Pressure Margin (%)': recommendation['pressure_margin']
             }
+        else:
+            row = {
+                'System': system,
+                'Model': 'Not found',
+                'Max Flow (CFM)': None,
+                'Max Pressure (inWG)': None,
+                'Power (W)': None,
+                'Flow Margin (%)': None,
+                'Pressure Margin (%)': None
+            }
+        
+        fan_df = pd.concat([fan_df, pd.DataFrame([row])], ignore_index=True)
+    
+    fan_df.to_csv('fan_recommendations.csv', index=False)
+    
+    print("\nResults saved to 'ventilation_results.csv'")
+    print("Fan recommendations saved to 'fan_recommendations.csv'")
+    print("System diagram saved to 'ventilation_system_diagram.png'")
 
-            # Add to total system airflow
-            system_results['total_airflow'] += required_airflow
-
-        # Analyze duct sections
-        for section in system['sections']:
-            # Calculate area
-            if section['shape'] == 'rectangular':
-                area = calculate_duct_area(section['size'], 'rectangular')
-            elif section['shape'] == 'circular':
-                area = calculate_duct_area(section['diameter'], 'circular')
-            elif section['shape'] == 'elbow':
-                if 'diameter' in section:
-                    area = calculate_duct_area(section['diameter'], 'circular')
-                else:
-                    area = calculate_duct_area(section['size'], 'rectangular')
-            elif section['shape'] == 'transition':
-                area = calculate_duct_area(section['size_in'], 'rectangular')
-
-            # Calculate velocity
-            velocity = calculate_velocity(system_results['total_airflow'], area)
-
-            # Calculate pressure loss
-            pressure_loss = calculate_pressure_loss(system_results['total_airflow'], section, density)
-
-            # Store
+if __name__ == "__main__":
+    main()
