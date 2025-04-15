@@ -1,49 +1,120 @@
-# Ventilation Analysis
+# Bathroom Ventilation System Analysis
 
-This repository contains a Python script and Jupyter Notebook for analyzing ventilation systems. The analysis calculates required airflow, duct velocities, and pressure losses for different room and duct configurations. It also provides recommendations for fan selection based on the analysis results.
+This repository contains tools for analyzing and designing ventilation systems for multi-floor facility bathrooms. The code calculates required airflow rates, duct velocities, pressure losses, and recommends appropriate centrifugal fans based on the system requirements.
 
-## Repository Contents
+## Project Overview
 
-- `ventilation_analysis.py`: The main Python script that performs the ventilation analysis.
-- `ventilation_analysis.ipynb`: A Jupyter Notebook to run the analysis and display results.
-- `requirements.txt`: A list of Python dependencies required to run the analysis.
-- `runtime.txt`: Specifies the Python version for the Binder environment.
-- `ventilation_report.md`: The generated report from the analysis.
-- `ventilation_velocities.png` and `ventilation_pressure_losses.png`: Visualizations of the analysis results.
+The ventilation system analysis covers:
 
-## Setup Instructions
+- Calculation of required air changes per hour (ACH) for each bathroom
+- Analysis of airflow velocities through grilles and ducts
+- Calculation of pressure losses throughout the duct system
+- Recommendations for appropriate centrifugal fans
+- Visualization of the ventilation system layout
+- Interactive adjustment of parameters to optimize the system
 
-To run the analysis locally, follow these steps:
+## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/hiesus/ventilation-analysis.git
-   cd ventilation-analysis
-   ```
+### Local Installation
 
-2. Install the required Python packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. Clone this repository:
+```bash
+git clone https://github.com/yourusername/ventilation-analysis.git
+cd ventilation-analysis
+```
 
-3. Run the analysis script:
-   ```bash
-   python ventilation_analysis.py
-   ```
+2. Install the required dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-4. View the results in `ventilation_report.md` and the visualizations in the PNG files.
+### Running on Binder
 
-## Running on Binder
+You can run this project directly in your browser without installing anything using Binder:
 
-You can also run the analysis using Binder, which provides an online JupyterLab environment:
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/yourusername/ventilation-analysis/main?filepath=ventilation_analysis.ipynb)
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/your-username/ventilation-analysis/HEAD)
+## Usage
 
-Click the Binder badge above to launch the JupyterLab environment. Open the `ventilation_analysis.ipynb` notebook and run the cells to perform the analysis.
+### Jupyter Notebook
+
+The main analysis is contained in the `ventilation_analysis.ipynb` notebook. Open it with Jupyter:
+
+```bash
+jupyter notebook ventilation_analysis.ipynb
+```
+
+The notebook provides an interactive interface to:
+- Run the ventilation system analysis
+- View improvement suggestions
+- See fan recommendations
+- Visualize the system layout
+- Interactively adjust parameters
+
+### Python Script
+
+You can also run the analysis directly using the Python script:
+
+```bash
+python ventilation_calculator.py
+```
+
+This will:
+1. Analyze the ventilation system under the worst-case climate conditions
+2. Generate suggestions for improvements
+3. Recommend appropriate fans
+4. Save results to CSV files
+5. Generate a system diagram
+
+## System Description
+
+The ventilation system analyzed in this project consists of:
+
+### System 1: Ground Floor & Cafeteria
+- **PB_Bano_C**: 25m³, 2 grilles (4"x11")
+- **PB_Bano_D**: 18m³, 3 grilles (6"x11")
+- **Cafetin_Bano_C**: 6.5m³, 1 grille (7.5"x10")
+- **Cafetin_Bano_D**: 9m³, 2 grilles (7.5"x11")
+
+### System 2: Floor 1 & Floor 2
+- **Piso1_Bano_C**: 10m³, 3 grilles (6"x14")
+- **Piso1_Bano_D**: 10m³, 3 grilles (6"x14")
+- **Piso2_Bano_C**: 10m³, 3 grilles (4"x11")
+- **Piso2_Bano_D**: 10m³, 3 grilles (4"x11")
+- **Ducto_Principal_Piso2**: Main duct (11"x11")
+
+## Climate Conditions
+
+The analysis considers the following climate conditions:
+- **Average**: 25°C, 60% RH
+- **Extreme Hot & Humid**: 28°C, 93% RH
+- **Extreme Cold & Dry**: 16°C, 30% RH
+
+The facility is located at an altitude of 850m above sea level.
+
+## Output Files
+
+The analysis generates the following output files:
+- `ventilation_results.csv`: Detailed results for each bathroom
+- `fan_recommendations.csv`: Fan recommendations for each system
+- `ventilation_system_diagram.png`: Visual representation of the ventilation system
+
+## Standards and Guidelines
+
+The analysis follows these general guidelines:
+- Minimum grille velocity: 2.5 m/s
+- Maximum grille velocity: 4.0 m/s
+- Minimum duct velocity: 3.0 m/s
+- Maximum duct velocity: 10.0 m/s
+- Minimum air changes per hour for bathrooms: 10 ACH
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 Startup information:
 
