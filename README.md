@@ -1,6 +1,6 @@
 # ventilation-calculator
 CVA bathrooms ventilation-calculator
-[![Binder](https://mybinder.org/badge_logo.svg)](https://hub.2i2c.mybinder.org/user/hiesus-ventilation-calculator-cdtazwsc/lab/tree/ventilation_analysis.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://2i2c.mybinder.org/v2/gh/hiesus/ventilation-calculator/main)
 
 This is the ventilation of a facility bathrooms:
 
