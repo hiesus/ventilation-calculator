@@ -699,3 +699,204 @@ def generate_report(systems, airflows, pressure_drops, fan_options, velocity_iss
             report['recommendations'][system_name] = {
                 'fan_model': best_fan['model'],
                 'max_flow_cfm': best
+                'max_flow_cfm': best_fan['max_flow_cfm'],
+                'max_pressure_inwg': best_fan['max_pressure_inwg'],
+                'power_w': best_fan['power_w'],
+                'diameter_inches': best_fan['diameter_inches'],
+                'flow_margin_percent': best_fan['flow_margin'],
+                'pressure_margin_percent': best_fan['pressure_margin']
+            }
+        else:
+            report['recommendations'][system_name] = {
+                'message': 'No suitable fan found. Consider custom solutions or redesigning the duct system.'
+            }
+    
+    return report
+
+# Main function to run the calculations
+def calculate_ventilation_system():
+    # Define the systems
+    systems = define_bathroom_systems()
+    
+    # Calculate airflow requirements
+    airflows = calculate_system_airflows(systems)
+    
+    # Calculate pressure drops
+    pressure_drops = calculate_pressure_drops(systems, airflows)
+    
+    # Check duct velocities
+    velocity_issues = check_duct_velocities(systems, airflows)
+    
+    # Select appropriate fans
+    fan_options = select_fans(airflows, pressure_drops)
+    
+    # Generate report
+    report = generate_report(systems, airflows, pressure_drops, fan_options, velocity_issues)
+    
+    return report
+
+# Function to print the report in a readable format
+def print_report(report):
+    print("=== VENTILATION SYSTEM REPORT ===\n")
+    
+    for system_name, system_data in report['systems'].items():
+        print(f"SYSTEM: {system_name}")
+        print("-" * 40)
+        
+        # Airflow information
+        print("AIRFLOW REQUIREMENTS:")
+        print(f"Total: {system_data['airflow']['total_m3s']:.4f} m³/s ({system_data['airflow']['total_cfm']:.1f} CFM)")
+        print("Room breakdown:")
+        for room, flow in system_data['airflow']['rooms'].items():
+            print(f"  - {room}: {flow['m3s']:.4f} m³/s ({flow['cfm']:.1f} CFM)")
+        
+        # Pressure drop information
+        print("\nPRESSURE DROP ANALYSIS:")
+        print(f"Total: {system_data['pressure_drop']['total_pa']:.2f} Pa ({system_data['pressure_drop']['total_inwg']:.4f} inWG)")
+        print("Component breakdown:")
+        for component, dp in system_data['pressure_drop']['components'].items():
+            print(f"  - {component}: {dp['pa']:.2f} Pa ({dp['inwg']:.4f} inWG)")
+        
+        # Velocity issues
+        print("\nVELOCITY ISSUES:")
+        if system_data['velocity_issues']:
+            for issue in system_data['velocity_issues']:
+                print(f"  - {issue['component']}: {issue['velocity']:.2f} m/s")
+                print(f"    Recommended: {issue['recommended_range'][0]}-{issue['recommended_range'][1]} m/s")
+                print(f"    Status: {issue['status']}")
+        else:
+            print("  No velocity issues detected.")
+        
+        # Fan recommendation
+        print("\nFAN RECOMMENDATION:")
+        if system_name in report['recommendations']:
+            rec = report['recommendations'][system_name]
+            if 'fan_model' in rec:
+                print(f"  Model: {rec['fan_model']}")
+                print(f"  Max Flow: {rec['max_flow_cfm']} CFM")
+                print(f"  Max Static Pressure: {rec['max_pressure_inwg']} inWG")
+                print(f"  Power: {rec['power_w']} W")
+                print(f"  Diameter: {rec['diameter_inches']} inches")
+                print(f"  Flow Margin: {rec['flow_margin_percent']:.1f}%")
+                print(f"  Pressure Margin: {rec['pressure_margin_percent']:.1f}%")
+            else:
+                print(f"  {rec['message']}")
+        
+        print("\n" + "=" * 40 + "\n")
+
+# Function to visualize the system
+def visualize_system(report):
+    # Create a figure with subplots for each system
+    fig, axs = plt.subplots(len(report['systems']), 2, figsize=(15, 8 * len(report['systems'])))
+    
+    for i, (system_name, system_data) in enumerate(report['systems'].items()):
+        # Airflow distribution pie chart
+        ax1 = axs[i, 0] if len(report['systems']) > 1 else axs[0]
+        room_names = list(system_data['airflow']['rooms'].keys())
+        room_flows = [flow['cfm'] for flow in system_data['airflow']['rooms'].values()]
+        
+        ax1.pie(room_flows, labels=room_names, autopct='%1.1f%%', startangle=90)
+        ax1.set_title(f'{system_name} - Airflow Distribution (CFM)')
+        
+        # Pressure drop bar chart
+        ax2 = axs[i, 1] if len(report['systems']) > 1 else axs[1]
+        component_names = list(system_data['pressure_drop']['components'].keys())
+        component_pressures = [dp['pa'] for dp in system_data['pressure_drop']['components'].values()]
+        
+        # Sort by pressure drop
+        sorted_indices = np.argsort(component_pressures)[::-1]
+        sorted_names = [component_names[j] for j in sorted_indices]
+        sorted_pressures = [component_pressures[j] for j in sorted_indices]
+        
+        # Limit to top 10 components for readability
+        if len(sorted_names) > 10:
+            sorted_names = sorted_names[:10]
+            sorted_pressures = sorted_pressures[:10]
+            sorted_names.append('Others')
+            sorted_pressures.append(sum(component_pressures) - sum(sorted_pressures))
+        
+        bars = ax2.barh(sorted_names, sorted_pressures)
+        ax2.set_title(f'{system_name} - Pressure Drop by Component (Pa)')
+        ax2.set_xlabel('Pressure Drop (Pa)')
+        
+        # Add values to bars
+        for bar in bars:
+            width = bar.get_width()
+            ax2.text(width + 1, bar.get_y() + bar.get_height()/2, f'{width:.1f}', 
+                    ha='left', va='center')
+    
+    plt.tight_layout()
+    plt.savefig('ventilation_analysis.png')
+    plt.close()
+
+# Function to export report to CSV
+def export_to_csv(report):
+    # Export airflow data
+    airflow_data = []
+    for system_name, system_data in report['systems'].items():
+        for room, flow in system_data['airflow']['rooms'].items():
+            airflow_data.append({
+                'System': system_name,
+                'Room': room,
+                'Flow (m³/s)': flow['m3s'],
+                'Flow (CFM)': flow['cfm']
+            })
+    
+    airflow_df = pd.DataFrame(airflow_data)
+    airflow_df.to_csv('airflow_requirements.csv', index=False)
+    
+    # Export pressure drop data
+    pressure_data = []
+    for system_name, system_data in report['systems'].items():
+        for component, dp in system_data['pressure_drop']['components'].items():
+            pressure_data.append({
+                'System': system_name,
+                'Component': component,
+                'Pressure Drop (Pa)': dp['pa'],
+                'Pressure Drop (inWG)': dp['inwg']
+            })
+    
+    pressure_df = pd.DataFrame(pressure_data)
+    pressure_df.to_csv('pressure_drops.csv', index=False)
+    
+    # Export fan recommendations
+    fan_data = []
+    for system_name, rec in report['recommendations'].items():
+        if 'fan_model' in rec:
+            fan_data.append({
+                'System': system_name,
+                'Model': rec['fan_model'],
+                'Max Flow (CFM)': rec['max_flow_cfm'],
+                'Max Pressure (inWG)': rec['max_pressure_inwg'],
+                'Power (W)': rec['power_w'],
+                'Diameter (inches)': rec['diameter_inches'],
+                'Flow Margin (%)': rec['flow_margin_percent'],
+                'Pressure Margin (%)': rec['pressure_margin_percent']
+            })
+    
+    if fan_data:
+        fan_df = pd.DataFrame(fan_data)
+        fan_df.to_csv('fan_recommendations.csv', index=False)
+    
+    # Export velocity issues
+    velocity_data = []
+    for system_name, system_data in report['systems'].items():
+        for issue in system_data['velocity_issues']:
+            velocity_data.append({
+                'System': system_name,
+                'Component': issue['component'],
+                'Velocity (m/s)': issue['velocity'],
+                'Min Recommended (m/s)': issue['recommended_range'][0],
+                'Max Recommended (m/s)': issue['recommended_range'][1],
+                'Status': issue['status']
+            })
+    
+    if velocity_data:
+        velocity_df = pd.DataFrame(velocity_data)
+        velocity_df.to_csv('velocity_issues.csv', index=False)
+
+if __name__ == "__main__":
+    report = calculate_ventilation_system()
+    print_report(report)
+    visualize_system(report)
+    export_to_csv(report)
