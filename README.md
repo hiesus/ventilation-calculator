@@ -19,7 +19,7 @@ The ventilation system analysis covers:
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/hiesus/ventilation-analysis.git
+git clone https://github.com/hiesus/ventilation-calculator.git
 cd ventilation-analysis
 ```
 
@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 You can run this project directly in your browser without installing anything using Binder:
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/hiesus/ventilation-analysis/main?filepath=ventilation_analysis.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/hiesus/ventilation-calculator/main?filepath=ventilation_analysis.ipynb)
 
 ## Usage
 
