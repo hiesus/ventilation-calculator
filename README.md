@@ -15,7 +15,7 @@ This repository contains a Python-based tool for calculating ventilation require
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/ventilation-calculator.git
+git clone https://github.com/hiesus/ventilation-calculator.git
 cd ventilation-calculator
 ```
 
@@ -48,7 +48,7 @@ python -c "import ventilation_calculator as vc; report = vc.calculate_ventilatio
 
 You can run this tool online without installing anything by using MyBinder:
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/yourusername/ventilation-calculator/main?filepath=ventilation_analysis.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/hiesus/ventilation-calculator/main?filepath=ventilation_analysis.ipynb)
 
 Click the Binder badge above to launch the notebook in your browser.
 
