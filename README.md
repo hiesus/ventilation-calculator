@@ -1,22 +1,49 @@
-# Ventilation System Analysis Tool
+# Ventilation Analysis
 
-This tool analyzes ventilation systems for bathroom facilities, calculates required airflow, pressure losses, and recommends appropriate centrifugal fans.
+This repository contains a Python script and Jupyter Notebook for analyzing ventilation systems. The analysis calculates required airflow, duct velocities, and pressure losses for different room and duct configurations. It also provides recommendations for fan selection based on the analysis results.
 
-## Features
+## Repository Contents
 
-- Calculates required airflow based on room volumes and recommended air changes
-- Analyzes duct systems and calculates pressure losses
-- Ensures minimum velocities are within standards
-- Recommends appropriate centrifugal fans
-- Generates comprehensive reports and visualizations
+- `ventilation_analysis.py`: The main Python script that performs the ventilation analysis.
+- `ventilation_analysis.ipynb`: A Jupyter Notebook to run the analysis and display results.
+- `requirements.txt`: A list of Python dependencies required to run the analysis.
+- `runtime.txt`: Specifies the Python version for the Binder environment.
+- `ventilation_report.md`: The generated report from the analysis.
+- `ventilation_velocities.png` and `ventilation_pressure_losses.png`: Visualizations of the analysis results.
 
-## Usage
+## Setup Instructions
 
-### Online with MyBinder
+To run the analysis locally, follow these steps:
 
-1. Visit [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/YOUR_USERNAME/ventilation-analysis/main)
-2. Open and run the `ventilation_analysis
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/ventilation-analysis.git
+   cd ventilation-analysis
+   ```
 
+2. Install the required Python packages:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Run the analysis script:
+   ```bash
+   python ventilation_analysis.py
+   ```
+
+4. View the results in `ventilation_report.md` and the visualizations in the PNG files.
+
+## Running on Binder
+
+You can also run the analysis using Binder, which provides an online JupyterLab environment:
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/your-username/ventilation-analysis/HEAD)
+
+Click the Binder badge above to launch the JupyterLab environment. Open the `ventilation_analysis.ipynb` notebook and run the cells to perform the analysis.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 Startup information:
 
