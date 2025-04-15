@@ -1,8 +1,79 @@
-# ventilation-calculator
-CVA bathrooms ventilation-calculator
-[![Binder](https://mybinder.org/badge_logo.svg)](https://2i2c.mybinder.org/v2/gh/hiesus/ventilation-calculator/main)
+# Bathroom Ventilation System Calculator
 
-This is the ventilation of a facility bathrooms:
+This repository contains a Python-based tool for calculating ventilation requirements for bathroom facilities. It analyzes duct systems, calculates pressure drops, and recommends appropriate centrifugal fans.
+
+## Features
+
+- Calculates required airflow based on room volume and air changes per hour
+- Analyzes pressure drops in complex duct systems
+- Checks duct velocities against recommended standards
+- Recommends suitable centrifugal fans
+- Visualizes results with charts and graphs
+- Exports data to CSV files for further analysis
+
+## Installation
+
+1. Clone this repository:
+```bash
+git clone https://github.com/yourusername/ventilation-calculator.git
+cd ventilation-calculator
+```
+
+2. Install the required dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Using Jupyter Notebook
+
+The easiest way to use this tool is through the provided Jupyter notebook:
+
+```bash
+jupyter notebook ventilation_analysis.ipynb
+```
+
+This will open the notebook in your browser where you can run the analysis step by step.
+
+### Using Python Script
+
+Alternatively, you can run the main script directly:
+
+```bash
+python -c "import ventilation_calculator as vc; report = vc.calculate_ventilation_system(); vc.print_report(report); vc.visualize_system(report); vc.export_to_csv(report)"
+```
+
+## Online Usage with MyBinder
+
+You can run this tool online without installing anything by using MyBinder:
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/yourusername/ventilation-calculator/main?filepath=ventilation_analysis.ipynb)
+
+Click the Binder badge above to launch the notebook in your browser.
+
+## Project Structure
+
+- `ventilation_calculator.py`: Main module containing all calculation functions
+- `ventilation_analysis.ipynb`: Jupyter notebook for interactive analysis
+- `requirements.txt`: List of Python dependencies
+- `README.md`: This file
+
+## Customization
+
+You can modify the following parameters in the code to match your specific requirements:
+
+- `CHANGES_PER_HOUR`: Number of air changes per hour (default: 12)
+- `ALTITUDE`: Altitude in meters above sea level (default: 850)
+- `TEMP_AVG`: Average temperature in °C (default: 25)
+- `RH_AVG`: Average relative humidity in % (default: 60)
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+
+This is the ventilation startup specifications:
 
 Planta Baja Bano C; 25m3, 2 rejillas 4"x11" conectadas a ducto 6"x11" de 4m que termina en expansión brusca a ducto11"x11" de 2m con codo 90 grados  11"x11" con cambio de sección de 11"x11" a sección circular de 12.5" y ducto circular vertical de 6m de 12.5" con codo 90 grados para conectar con ventilador en techo.
 Planta Baja Baño D; 18m3, 3 rejillas 6x11 conectadas por codos 90 grados a ducto 6"x11" de 4m conectado a ducto Planta Baja Bano C.
